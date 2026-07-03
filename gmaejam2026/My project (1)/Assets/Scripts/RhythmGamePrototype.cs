@@ -29,6 +29,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GoodWheelUp
     }
 
+    private enum RhythmDifficulty
+    {
+        Easy,
+        Normal,
+        Hard
+    }
+
     private struct NoteSpec
     {
         public readonly float Time;
@@ -71,6 +78,32 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public string FilePath;
         public AudioClip ResourceClip;
         public AudioClip LoadedClip;
+    }
+
+    private sealed class DifficultyPreset
+    {
+        public string Label;
+        public float AnalysisStrongBase;
+        public float AnalysisStrongOnset;
+        public float AnalysisStrongEnergy;
+        public float AnalysisWeakBase;
+        public float AnalysisWeakOnset;
+        public float AnalysisWeakEnergy;
+        public float AnalysisHighOnsetThreshold;
+        public float AnalysisHighOnsetMinChance;
+        public float AnalysisExtraNoteChance;
+        public float LongEnergyThreshold;
+        public float LongNoteChance;
+        public float FallbackStrongChance;
+        public float FallbackWeakChance;
+        public float FallbackLongChance;
+        public float FallbackExtraNoteChance;
+        public float TapGap;
+        public float LongGap;
+        public float LaneChangeChance;
+        public float WideLaneJumpChance;
+        public float ColorSwitchChance;
+        public float GoodNoteChance;
     }
 
     [Serializable]
@@ -138,6 +171,81 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static readonly Color WhiteColor = new Color(0.97f, 0.99f, 1f, 1f);
     private static readonly Color LaneColor = new Color(0.85f, 0.97f, 1f, 0.92f);
     private static readonly float[] NoteYs = { -1.7f, LaneY, 0.45f };
+    private static readonly DifficultyPreset EasyDifficulty = new DifficultyPreset
+    {
+        Label = "EASY",
+        AnalysisStrongBase = 0.16f,
+        AnalysisStrongOnset = 0.50f,
+        AnalysisStrongEnergy = 0.08f,
+        AnalysisWeakBase = 0.02f,
+        AnalysisWeakOnset = 0.28f,
+        AnalysisWeakEnergy = 0.04f,
+        AnalysisHighOnsetThreshold = 0.86f,
+        AnalysisHighOnsetMinChance = 0.78f,
+        AnalysisExtraNoteChance = 0f,
+        LongEnergyThreshold = 0.52f,
+        LongNoteChance = 0.22f,
+        FallbackStrongChance = 0.78f,
+        FallbackWeakChance = 0.28f,
+        FallbackLongChance = 0.18f,
+        FallbackExtraNoteChance = 0.04f,
+        TapGap = 0.52f,
+        LongGap = 1.20f,
+        LaneChangeChance = 0.55f,
+        WideLaneJumpChance = 0.08f,
+        ColorSwitchChance = 0.30f,
+        GoodNoteChance = 0.58f
+    };
+    private static readonly DifficultyPreset NormalDifficulty = new DifficultyPreset
+    {
+        Label = "NORMAL",
+        AnalysisStrongBase = 0.26f,
+        AnalysisStrongOnset = 0.62f,
+        AnalysisStrongEnergy = 0.12f,
+        AnalysisWeakBase = 0.08f,
+        AnalysisWeakOnset = 0.68f,
+        AnalysisWeakEnergy = 0.08f,
+        AnalysisHighOnsetThreshold = 0.78f,
+        AnalysisHighOnsetMinChance = 0.94f,
+        AnalysisExtraNoteChance = 0f,
+        LongEnergyThreshold = 0.38f,
+        LongNoteChance = 0.58f,
+        FallbackStrongChance = 0.95f,
+        FallbackWeakChance = 0.76f,
+        FallbackLongChance = 0.56f,
+        FallbackExtraNoteChance = 0.18f,
+        TapGap = MinTapNoteGap,
+        LongGap = MinLongNoteGap,
+        LaneChangeChance = 0.90f,
+        WideLaneJumpChance = 0.35f,
+        ColorSwitchChance = 0.50f,
+        GoodNoteChance = 0.55f
+    };
+    private static readonly DifficultyPreset HardDifficulty = new DifficultyPreset
+    {
+        Label = "HARD",
+        AnalysisStrongBase = 0.38f,
+        AnalysisStrongOnset = 0.72f,
+        AnalysisStrongEnergy = 0.16f,
+        AnalysisWeakBase = 0.18f,
+        AnalysisWeakOnset = 0.78f,
+        AnalysisWeakEnergy = 0.12f,
+        AnalysisHighOnsetThreshold = 0.70f,
+        AnalysisHighOnsetMinChance = 0.98f,
+        AnalysisExtraNoteChance = 0.24f,
+        LongEnergyThreshold = 0.28f,
+        LongNoteChance = 0.74f,
+        FallbackStrongChance = 0.98f,
+        FallbackWeakChance = 0.90f,
+        FallbackLongChance = 0.68f,
+        FallbackExtraNoteChance = 0.34f,
+        TapGap = 0.28f,
+        LongGap = 0.78f,
+        LaneChangeChance = 1f,
+        WideLaneJumpChance = 0.55f,
+        ColorSwitchChance = 0.72f,
+        GoodNoteChance = 0.52f
+    };
 
     private static Sprite badTapSprite;
     private static Sprite goodTapSprite;
@@ -181,6 +289,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private AudioClip hitSoundClip;
     private AudioClip currentSongClip;
     private AudioClip generatedSongClip;
+    private SongAnalysis currentSongAnalysis;
     private readonly List<LocalSongEntry> localSongs = new List<LocalSongEntry>();
     private Vector2 localSongScroll;
     private double songStartDspTime;
@@ -199,6 +308,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool isStartingMurekaBackend;
     private bool isLoadingLocalSong;
     private bool isEditingPrompt;
+    private RhythmDifficulty selectedDifficulty = RhythmDifficulty.Normal;
     private bool songSelectionVisible = true;
     private bool chartFinished;
     private bool instructionShown;
@@ -411,11 +521,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 songSelectionVisible = true;
             }
 
+            DrawDifficultyButtons(panelX + 128f * scale, panelY, 250f * scale, 30f * scale, scale);
+
             return;
         }
 
         float panelWidth = Mathf.Min(390f * scale, Screen.width - 36f * scale);
-        float panelHeight = Mathf.Clamp(Screen.height - panelY - 124f * scale, 132f * scale, 372f * scale);
+        float panelHeight = Mathf.Clamp(Screen.height - panelY - 124f * scale, 180f * scale, 416f * scale);
         Rect panelRect = new Rect(panelX, panelY, panelWidth, panelHeight);
         DrawPanel(panelRect, new Color(0.02f, 0.09f, 0.18f, 0.88f));
 
@@ -442,16 +554,18 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             songSelectionVisible = false;
         }
 
+        DrawDifficultyButtons(panelX + 14f * scale, panelY + 40f * scale, panelWidth - 28f * scale, 28f * scale, scale);
+
         if (localSongs.Count == 0)
         {
             GUI.Label(
-                new Rect(panelX + 14f * scale, panelY + 44f * scale, panelWidth - 28f * scale, 64f * scale),
+                new Rect(panelX + 14f * scale, panelY + 78f * scale, panelWidth - 28f * scale, 64f * scale),
                 "No songs found in Assets/Resources/Music.",
                 songLabelStyle);
             return;
         }
 
-        Rect viewRect = new Rect(panelX + 14f * scale, panelY + 42f * scale, panelWidth - 28f * scale, panelHeight - 56f * scale);
+        Rect viewRect = new Rect(panelX + 14f * scale, panelY + 78f * scale, panelWidth - 28f * scale, panelHeight - 92f * scale);
         float rowHeight = 34f * scale;
         Rect contentRect = new Rect(0f, 0f, viewRect.width - 18f * scale, localSongs.Count * rowHeight);
         localSongScroll = GUI.BeginScrollView(viewRect, localSongScroll, contentRect, false, true);
@@ -478,6 +592,35 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         GUI.EndScrollView();
+    }
+
+    private void DrawDifficultyButtons(float x, float y, float width, float height, float scale)
+    {
+        RhythmDifficulty[] difficulties =
+        {
+            RhythmDifficulty.Easy,
+            RhythmDifficulty.Normal,
+            RhythmDifficulty.Hard
+        };
+
+        float gap = 6f * scale;
+        float buttonWidth = (width - gap * 2f) / difficulties.Length;
+        bool previousEnabled = GUI.enabled;
+        GUI.enabled = previousEnabled && !isLoadingLocalSong && !isRequestingMurekaSong;
+
+        for (int i = 0; i < difficulties.Length; i++)
+        {
+            RhythmDifficulty difficulty = difficulties[i];
+            Rect rect = new Rect(x + i * (buttonWidth + gap), y, buttonWidth, height);
+            bool selected = difficulty == selectedDifficulty;
+            DrawRect(rect, selected ? new Color(0.08f, 0.42f, 1f, 0.62f) : new Color(0f, 0f, 0f, 0.18f));
+            if (GUI.Button(rect, GetDifficultyPreset(difficulty).Label))
+            {
+                SetDifficulty(difficulty);
+            }
+        }
+
+        GUI.enabled = previousEnabled;
     }
 
     private void ReadInput()
@@ -1821,23 +1964,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         generatedSongProvider = "LOCAL";
         generatedSongWarning = string.Empty;
         generatedSongLength = Mathf.Max(4f, clip.length);
+        currentSongAnalysis = analysis;
 
         if (analysis != null)
         {
             generatedBpm = analysis.Bpm;
-            BuildChartFromAnalysis(analysis, new System.Random(generatedSongSeed));
+            BuildChartFromAnalysis(analysis, CreateChartRandom());
         }
         else
         {
             generatedBpm = 128f;
-            BuildChartForMurekaSong(new System.Random(generatedSongSeed));
+            BuildChartForMurekaSong(CreateChartRandom());
             generatedSongWarning = "Beat analysis failed; using 128 BPM fallback.";
         }
 
         RestartChart();
         songSelectionVisible = false;
         isLoadingLocalSong = false;
-        murekaStatus = "Playing " + song.Name + " — detected " + generatedBpm.ToString("0.0") + " BPM";
+        murekaStatus = "Playing " + song.Name + " — " + GetDifficultyPreset().Label + " — detected " + generatedBpm.ToString("0.0") + " BPM";
     }
 
     private void AddLocalSong(string songName, string filePath, AudioClip resourceClip)
@@ -1871,6 +2015,66 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             FilePath = filePath,
             ResourceClip = resourceClip
         });
+    }
+
+    private void SetDifficulty(RhythmDifficulty difficulty)
+    {
+        if (selectedDifficulty == difficulty)
+        {
+            return;
+        }
+
+        selectedDifficulty = difficulty;
+        if (currentSongClip != null && !isLoadingLocalSong && !isRequestingMurekaSong)
+        {
+            RebuildCurrentChartForDifficulty();
+            murekaStatus = "Difficulty changed to " + GetDifficultyPreset().Label + ". Restarting current song.";
+        }
+        else
+        {
+            murekaStatus = "Difficulty set to " + GetDifficultyPreset().Label + ".";
+        }
+    }
+
+    private void RebuildCurrentChartForDifficulty()
+    {
+        if (currentSongAnalysis != null)
+        {
+            BuildChartFromAnalysis(currentSongAnalysis, CreateChartRandom());
+        }
+        else
+        {
+            BuildChartForMurekaSong(CreateChartRandom());
+        }
+
+        RestartChart();
+    }
+
+    private System.Random CreateChartRandom()
+    {
+        unchecked
+        {
+            int seed = generatedSongSeed ^ (((int)selectedDifficulty + 1) * 7919);
+            return new System.Random(seed == int.MinValue ? int.MaxValue : Mathf.Abs(seed));
+        }
+    }
+
+    private DifficultyPreset GetDifficultyPreset()
+    {
+        return GetDifficultyPreset(selectedDifficulty);
+    }
+
+    private static DifficultyPreset GetDifficultyPreset(RhythmDifficulty difficulty)
+    {
+        switch (difficulty)
+        {
+            case RhythmDifficulty.Easy:
+                return EasyDifficulty;
+            case RhythmDifficulty.Hard:
+                return HardDifficulty;
+            default:
+                return NormalDifficulty;
+        }
     }
 
     private void GenerateNewSong()
@@ -1991,6 +2195,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         currentSongClip = null;
+        currentSongAnalysis = null;
         selectedLocalSongIndex = -1;
 
         if (generatedSongClip != null)
@@ -2147,11 +2352,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (analysis != null)
         {
             generatedBpm = analysis.Bpm;
-            BuildChartFromAnalysis(analysis, new System.Random(generatedSongSeed));
+            currentSongAnalysis = analysis;
+            BuildChartFromAnalysis(analysis, CreateChartRandom());
         }
         else
         {
-            BuildChartForMurekaSong(new System.Random(generatedSongSeed));
+            currentSongAnalysis = null;
+            BuildChartForMurekaSong(CreateChartRandom());
         }
 
         RestartChart();
@@ -2409,8 +2616,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void BuildChartFromAnalysis(SongAnalysis analysis, System.Random rng)
     {
         chart.Clear();
+        DifficultyPreset difficulty = GetDifficultyPreset();
         int laneCursor = 1;
         int playableBeatIndex = 0;
+        bool lastIsGood = true;
         float firstPlayableTime = Mathf.Max(0.85f, analysis.BeatOffset);
         float finalPlayableTime = Mathf.Max(firstPlayableTime, generatedSongLength - 1.1f);
 
@@ -2429,17 +2638,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             float onsetStrength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, noteTime);
             float energyStrength = SampleEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, noteTime);
             float noteChance = strongBeat
-                ? 0.26f + onsetStrength * 0.62f + energyStrength * 0.12f
-                : 0.08f + onsetStrength * 0.68f + energyStrength * 0.08f;
-            if (onsetStrength >= 0.78f)
+                ? difficulty.AnalysisStrongBase + onsetStrength * difficulty.AnalysisStrongOnset + energyStrength * difficulty.AnalysisStrongEnergy
+                : difficulty.AnalysisWeakBase + onsetStrength * difficulty.AnalysisWeakOnset + energyStrength * difficulty.AnalysisWeakEnergy;
+            if (onsetStrength >= difficulty.AnalysisHighOnsetThreshold)
             {
-                noteChance = Mathf.Max(noteChance, 0.94f);
+                noteChance = Mathf.Max(noteChance, difficulty.AnalysisHighOnsetMinChance);
             }
 
-            if (rng.NextDouble() <= noteChance)
+            if (rng.NextDouble() <= Mathf.Clamp01(noteChance))
             {
-                laneCursor = (laneCursor + (rng.Next(2) == 0 ? 1 : 2)) % NoteYs.Length;
-                bool isBlue = rng.NextDouble() >= 0.46;
+                laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
+                bool isBlue = PickGoodNote(rng, difficulty, ref lastIsGood);
                 float sustainedEnergy = AverageEnvelope(
                     analysis.EnergyEnvelope,
                     analysis.EnvelopeRate,
@@ -2447,13 +2656,30 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     noteTime + analysis.BeatDuration * 1.5f);
                 bool longNoteSlot = strongBeat || onsetStrength >= 0.82f;
                 bool isLong = longNoteSlot
-                    && sustainedEnergy >= 0.38f
-                    && rng.NextDouble() <= 0.58;
+                    && sustainedEnergy >= difficulty.LongEnergyThreshold
+                    && rng.NextDouble() <= difficulty.LongNoteChance;
                 NoteKind kind = isLong
                     ? (isBlue ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
                     : (isBlue ? NoteKind.GoodTap : NoteKind.BadTap);
 
                 TryAddGeneratedNote(noteTime, kind, laneCursor);
+            }
+
+            if (difficulty.AnalysisExtraNoteChance > 0f && beatInBar < BeatsPerBar - 1)
+            {
+                float extraCenterTime = beatTime + analysis.BeatDuration * 0.5f;
+                if (extraCenterTime <= finalPlayableTime)
+                {
+                    float extraTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, extraCenterTime, searchRadius);
+                    float extraOnset = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, extraTime);
+                    float extraChance = difficulty.AnalysisExtraNoteChance * Mathf.Clamp01(0.55f + extraOnset * 0.9f);
+                    if (rng.NextDouble() <= extraChance)
+                    {
+                        laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
+                        bool isBlue = PickGoodNote(rng, difficulty, ref lastIsGood);
+                        TryAddGeneratedNote(extraTime, isBlue ? NoteKind.GoodTap : NoteKind.BadTap, laneCursor);
+                    }
+                }
             }
 
             playableBeatIndex++;
@@ -2507,6 +2733,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void BuildChartForMurekaSong(System.Random rng)
     {
         chart.Clear();
+        DifficultyPreset difficulty = GetDifficultyPreset();
 
         float bpm = Mathf.Clamp(generatedBpm, 80f, 180f);
         float beatDuration = 60f / bpm;
@@ -2514,18 +2741,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float finalNoteTime = Mathf.Max(firstNoteTime, generatedSongLength - 1.25f);
         int laneCursor = 1;
         int beatIndex = 0;
+        bool lastIsGood = true;
 
         for (float noteTime = firstNoteTime; noteTime <= finalNoteTime; noteTime += beatDuration)
         {
             int beatInBar = beatIndex % BeatsPerBar;
             bool strongBeat = beatInBar == 0 || beatInBar == 2;
-            double noteChance = strongBeat ? 0.95 : 0.76;
+            double noteChance = strongBeat ? difficulty.FallbackStrongChance : difficulty.FallbackWeakChance;
 
             if (rng.NextDouble() <= noteChance)
             {
-                laneCursor = (laneCursor + (rng.Next(2) == 0 ? 1 : 2)) % NoteYs.Length;
-                bool isGood = rng.NextDouble() >= 0.45;
-                bool isWheel = strongBeat && rng.NextDouble() <= 0.56;
+                laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
+                bool isGood = PickGoodNote(rng, difficulty, ref lastIsGood);
+                bool isWheel = strongBeat && rng.NextDouble() <= difficulty.FallbackLongChance;
                 NoteKind kind = isWheel
                     ? (isGood ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
                     : (isGood ? NoteKind.GoodTap : NoteKind.BadTap);
@@ -2533,11 +2761,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 TryAddGeneratedNote(noteTime, kind, laneCursor);
             }
 
-            if (beatInBar < BeatsPerBar - 1 && rng.NextDouble() <= 0.18)
+            if (beatInBar < BeatsPerBar - 1 && rng.NextDouble() <= difficulty.FallbackExtraNoteChance)
             {
                 float extraTime = noteTime + beatDuration * 0.5f;
-                laneCursor = (laneCursor + 1) % NoteYs.Length;
-                bool isGood = rng.NextDouble() >= 0.5;
+                laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
+                bool isGood = PickGoodNote(rng, difficulty, ref lastIsGood);
                 TryAddGeneratedNote(extraTime, isGood ? NoteKind.GoodTap : NoteKind.BadTap, laneCursor);
             }
 
@@ -2566,9 +2794,60 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         return true;
     }
 
-    private static float GetGeneratedNoteGap(NoteKind kind)
+    private static int ChooseNextLaneIndex(int currentLane, System.Random rng, DifficultyPreset difficulty)
     {
-        return IsWheelNote(kind) ? MinLongNoteGap : MinTapNoteGap;
+        int clampedLane = Mathf.Clamp(currentLane, 0, NoteYs.Length - 1);
+        if (rng.NextDouble() > difficulty.LaneChangeChance)
+        {
+            return clampedLane;
+        }
+
+        bool wideJump = rng.NextDouble() <= difficulty.WideLaneJumpChance;
+        if (wideJump)
+        {
+            if (clampedLane == 0)
+            {
+                return NoteYs.Length - 1;
+            }
+
+            if (clampedLane == NoteYs.Length - 1)
+            {
+                return 0;
+            }
+        }
+
+        if (clampedLane == 0)
+        {
+            return 1;
+        }
+
+        if (clampedLane == NoteYs.Length - 1)
+        {
+            return NoteYs.Length - 2;
+        }
+
+        return clampedLane + (rng.Next(2) == 0 ? -1 : 1);
+    }
+
+    private static bool PickGoodNote(System.Random rng, DifficultyPreset difficulty, ref bool lastIsGood)
+    {
+        bool isGood = rng.NextDouble() <= difficulty.ColorSwitchChance
+            ? !lastIsGood
+            : lastIsGood;
+
+        if (rng.NextDouble() <= 0.14f)
+        {
+            isGood = rng.NextDouble() <= difficulty.GoodNoteChance;
+        }
+
+        lastIsGood = isGood;
+        return isGood;
+    }
+
+    private float GetGeneratedNoteGap(NoteKind kind)
+    {
+        DifficultyPreset difficulty = GetDifficultyPreset();
+        return IsWheelNote(kind) ? difficulty.LongGap : difficulty.TapGap;
     }
 
     private void PlayCurrentSong()
