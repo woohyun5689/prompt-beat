@@ -126,7 +126,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     }
 
     private const float LaneY = -0.35f;
-    private const float HitX = -4.85f;
+    private const float HitX = -3.75f;
     private const float SpawnX = 8.75f;
     private const float DespawnX = -8.5f;
     private const float NoteSpeed = 4.35f;
@@ -142,7 +142,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float LongNoteScratchDuration = 0.22f;
     private const float LongNoteTailDistance = 2.74f;
     private const float BlueLongNoteVerticalOffset = 1.94f;
-    private const float CharacterAfterimageDuration = 0.16f;
+    private const float CharacterAfterimageDuration = 0.28f;
     private const float WheelGestureThreshold = 0.35f;
     private const float WheelGestureReleaseDelay = 0.065f;
     private const float CharacterAnimationMix = 0.045f;
@@ -286,7 +286,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool wheelGestureConsumed;
     private AudioSource musicSource;
     private AudioSource hitSoundSource;
+    private AudioSource longScratchSoundSource;
     private AudioClip hitSoundClip;
+    private AudioClip longScratchSoundClip;
     private AudioClip currentSongClip;
     private AudioClip generatedSongClip;
     private SongAnalysis currentSongAnalysis;
@@ -331,6 +333,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Font gameFont;
     private SkeletonAnimation characterAnimation;
     private string characterRunAnimation;
+    private string lastBlueReactionAnimation;
+    private string lastRedReactionAnimation;
     private SkeletonDataAsset blueHitFxData;
     private SkeletonDataAsset redHitFxData;
 
@@ -380,6 +384,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             Destroy(hitSoundClip);
             hitSoundClip = null;
+        }
+
+        if (longScratchSoundClip != null)
+        {
+            Destroy(longScratchSoundClip);
+            longScratchSoundClip = null;
         }
 
         for (int i = 0; i < localSongs.Count; i++)
@@ -908,6 +918,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     direction.y * distance,
                     0f);
                 SpawnHitFxAt(note.Kind, fxPosition, 0.72f + nextFxIndex * 0.045f);
+                PlayLongScratchStepSound(note.Kind, nextFxIndex);
                 nextFxIndex++;
             }
 
@@ -1528,8 +1539,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        bool red = kind == NoteKind.BadTap || kind == NoteKind.BadWheelDown;
-        string reactionName = (red ? "Rednote" : "Bluenote") + UnityEngine.Random.Range(1, 3);
+        string reactionName;
+        if (kind == NoteKind.BadWheelDown)
+        {
+            reactionName = "Rednote_long";
+        }
+        else if (kind == NoteKind.GoodWheelUp)
+        {
+            reactionName = "Bluenote_long";
+        }
+        else
+        {
+            reactionName = GetRandomAvailableReaction(kind == NoteKind.BadTap);
+        }
+
+        if (string.IsNullOrEmpty(reactionName))
+        {
+            return;
+        }
+
         if (characterAnimation.Skeleton.Data.FindAnimation(reactionName) == null)
         {
             return;
@@ -1542,6 +1570,45 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             TrackEntry runEntry = characterAnimation.AnimationState.AddAnimation(0, characterRunAnimation, true, 0f);
             runEntry.MixDuration = CharacterAnimationMix;
         }
+    }
+
+    private string GetRandomAvailableReaction(bool red)
+    {
+        string prefix = red ? "Rednote" : "Bluenote";
+        int candidateCount = red ? 2 : 3;
+        var available = new List<string>(candidateCount);
+        for (int i = 1; i <= candidateCount; i++)
+        {
+            string candidate = prefix + i;
+            if (characterAnimation.Skeleton.Data.FindAnimation(candidate) != null)
+            {
+                available.Add(candidate);
+            }
+        }
+
+        if (available.Count == 0)
+        {
+            return null;
+        }
+
+        string previous = red ? lastRedReactionAnimation : lastBlueReactionAnimation;
+        int selectedIndex = UnityEngine.Random.Range(0, available.Count);
+        if (available.Count > 1 && available[selectedIndex] == previous)
+        {
+            selectedIndex = (selectedIndex + UnityEngine.Random.Range(1, available.Count)) % available.Count;
+        }
+
+        string selected = available[selectedIndex];
+        if (red)
+        {
+            lastRedReactionAnimation = selected;
+        }
+        else
+        {
+            lastBlueReactionAnimation = selected;
+        }
+
+        return selected;
     }
 
     private void LoadHitFxAssets()
@@ -1732,6 +1799,21 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         hitSoundSource.PlayOneShot(hitSoundClip, 0.92f);
     }
 
+    private void PlayLongScratchStepSound(NoteKind kind, int stepIndex)
+    {
+        if (longScratchSoundSource == null || longScratchSoundClip == null)
+        {
+            return;
+        }
+
+        int step = Mathf.Clamp(stepIndex, 0, 3);
+        bool red = kind == NoteKind.BadWheelDown;
+        float colorPitch = red ? 0.91f : 1.07f;
+        longScratchSoundSource.pitch = colorPitch + step * 0.075f + UnityEngine.Random.Range(-0.018f, 0.018f);
+        float volume = step == 3 ? 0.62f : 0.34f + step * 0.075f;
+        longScratchSoundSource.PlayOneShot(longScratchSoundClip, volume);
+    }
+
     private void SpawnHitFx(NoteKind kind, float laneY)
     {
         SpawnHitFxAt(kind, new Vector3(HitX, laneY, 0f), 1.48f);
@@ -1804,6 +1886,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         hitSoundSource.spatialBlend = 0f;
         hitSoundSource.volume = 1f;
         hitSoundClip = CreateHitSoundClip();
+
+        longScratchSoundSource = gameObject.AddComponent<AudioSource>();
+        longScratchSoundSource.playOnAwake = false;
+        longScratchSoundSource.loop = false;
+        longScratchSoundSource.spatialBlend = 0f;
+        longScratchSoundSource.volume = 1f;
+        longScratchSoundClip = CreateLongScratchSoundClip();
     }
 
     private static AudioClip CreateHitSoundClip()
@@ -1827,6 +1916,37 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         AudioClip clip = AudioClip.Create("Short Punchy Note Hit", sampleCount, 1, sampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    private static AudioClip CreateLongScratchSoundClip()
+    {
+        const int sampleRate = 48000;
+        const float duration = 0.082f;
+        int sampleCount = Mathf.CeilToInt(sampleRate * duration);
+        float[] samples = new float[sampleCount];
+        var random = new System.Random(42817);
+        float heldNoise = 0f;
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            float time = i / (float)sampleRate;
+            float normalizedTime = time / duration;
+            float envelope = Mathf.Exp(-time * 37f) * Mathf.SmoothStep(0f, 1f, Mathf.Min(1f, time * 900f));
+            if ((i & 7) == 0)
+            {
+                heldNoise = (float)random.NextDouble() * 2f - 1f;
+            }
+
+            float grit = heldNoise * 0.44f;
+            float scrapeFrequency = Mathf.Lerp(1380f, 410f, normalizedTime);
+            float scrape = Mathf.Sin(2f * Mathf.PI * scrapeFrequency * time + Mathf.Sin(time * 760f) * 1.6f) * 0.34f;
+            float crack = Mathf.Sin(2f * Mathf.PI * 2250f * time) * Mathf.Exp(-time * 105f) * 0.28f;
+            samples[i] = (float)Math.Tanh((grit + scrape + crack) * envelope * 1.55f) * 0.72f;
+        }
+
+        AudioClip clip = AudioClip.Create("Long Note Scratch Step", sampleCount, 1, sampleRate, false);
         clip.SetData(samples, 0);
         return clip;
     }
