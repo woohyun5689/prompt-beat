@@ -144,6 +144,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public string warning;
     }
 
+    [Serializable]
+    private sealed class MurekaHealthResponse
+    {
+        public bool ok;
+        public bool pythonReady;
+    }
+
     private const float LaneY = -0.35f;
     private const float HitX = -3.75f;
     private const float SpawnX = 8.75f;
@@ -3279,7 +3286,29 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             request.timeout = 2;
             yield return request.SendWebRequest();
-            onDone(request.result == UnityWebRequest.Result.Success);
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                onDone(false);
+                yield break;
+            }
+
+            bool ready = false;
+            try
+            {
+                MurekaHealthResponse health = JsonUtility.FromJson<MurekaHealthResponse>(request.downloadHandler.text);
+                ready = health != null && health.ok && health.pythonReady;
+            }
+            catch (ArgumentException)
+            {
+                ready = false;
+            }
+
+            if (!ready)
+            {
+                murekaStatus = "MUREKA backend needs setup. Run MurekaBackend/setup_mureka_backend.ps1.";
+            }
+
+            onDone(ready);
         }
     }
 
