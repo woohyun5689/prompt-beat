@@ -58,6 +58,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public GameObject Root;
         public bool Judged;
         public Transform[] GlitchLayers;
+        public Transform[] GlitchBars;
         public float GlitchSeed;
     }
 
@@ -106,6 +107,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public float GoodNoteChance;
     }
 
+    private sealed class ColorRecoveryTarget
+    {
+        public SpriteRenderer Renderer;
+        public Color OriginalColor;
+        public Color GrayscaleColor;
+    }
+
+    private sealed class ParallaxLayer
+    {
+        public Transform FirstTile;
+        public Transform SecondTile;
+        public float TileWidth;
+        public float CenterY;
+        public float Speed;
+    }
+
     [Serializable]
     private sealed class MurekaGenerateRequest
     {
@@ -132,6 +149,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float NoteSpeed = 4.35f;
     private const float HitWindow = 0.34f;
     private const float WheelHitWindow = 0.40f;
+    private const float TapMissInputWindow = 0.58f;
+    private const float WheelMissInputWindow = 0.68f;
     private const float MissWindow = 0.42f;
     private const float AutoFollowLookAhead = 1.85f;
     private const float AutoFollowSpeed = 12f;
@@ -142,11 +161,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float LongNoteScratchDuration = 0.22f;
     private const float LongNoteTailDistance = 2.74f;
     private const float BlueLongNoteVerticalOffset = 1.94f;
-    private const float CharacterAfterimageDuration = 0.28f;
+    private const float CharacterAfterimageDuration = 0.40f;
     private const float WheelGestureThreshold = 0.35f;
     private const float WheelGestureReleaseDelay = 0.065f;
     private const float CharacterAnimationMix = 0.045f;
-    private const int TutorialGuideNoteCount = 4;
+    private const float BackgroundSourcePixelsPerUnit = 108f;
+    private const float BackgroundSourceWidth = 3346f;
     private const int BeatsPerBar = 4;
     private const float AnalysisTargetRate = 100f;
     private const float MinimumAnalyzedBpm = 80f;
@@ -160,6 +180,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float MurekaBackendStartupTimeout = 45f;
     private const string PromptControlName = "MurekaPromptField";
     private const string MusicResourcesPath = "Music";
+    private const string PromptLaneMessage =
+        "오늘 저녁 메뉴 추천해줘  ·  이 오류를 고쳐줘  ·  여행 계획을 짜줘  ·  이 글을 요약해줘  ·  자연스럽게 번역해줘  ·  아이디어를 브레인스토밍해줘  ·  이메일을 정중하게 다듬어줘  ·  공부 계획을 만들어줘  ·  ";
     private const string DefaultMurekaPrompt =
         "Bright energetic K-pop rhythm game song, clean strong beat, cute arcade mood, 128 bpm, catchy synth hook, short intro, no long silence";
 
@@ -251,13 +273,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Sprite goodTapSprite;
     private static Sprite badLongHeadSprite;
     private static Sprite goodLongHeadSprite;
-    private static Sprite badLongTailSprite;
-    private static Sprite goodLongTailSprite;
-    private static Sprite rightChevronSprite;
     private static Sprite judgeRingSprite;
+    private static Sprite hitLineSprite;
     private static Sprite whiteSprite;
     private static Sprite softCircleSprite;
-    private static Material lineMaterial;
     private static Texture2D whiteTexture;
     private static Texture2D uiSheetTexture;
     private static Sprite[] redTapSprites;
@@ -269,16 +288,26 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Sprite mouseDownGuideSprite;
     private static Sprite mouseUpGuideSprite;
     private static Shader characterAfterimageShader;
+    private static Material backgroundColorRecoveryMaterial;
 
     private readonly List<Note> notes = new List<Note>();
     private readonly List<NoteSpec> chart = new List<NoteSpec>();
+    private readonly List<ColorRecoveryTarget> colorRecoveryTargets = new List<ColorRecoveryTarget>();
+    private readonly List<ParallaxLayer> parallaxLayers = new List<ParallaxLayer>();
     private readonly Dictionary<string, SongAnalysis> songAnalysisCache = new Dictionary<string, SongAnalysis>();
+    private readonly HashSet<NoteKind> tutorialKindsShown = new HashSet<NoteKind>();
 
     private Transform notesRoot;
     private Transform judgeRing;
     private SpriteRenderer judgeRingRenderer;
     private SpriteRenderer hitLineRenderer;
+    private readonly Transform[] promptLaneSegments = new Transform[2];
+    private readonly TextMesh[] promptLaneTexts = new TextMesh[2];
+    private readonly int[] promptLaneHiddenCharacters = { -1, -1 };
+    private float promptLaneSegmentWidth = 24f;
+    private float promptLaneCharacterWidth = 0.22f;
     private Camera gameCamera;
+    private Color cameraOriginalBackgroundColor;
     private Vector3 cameraBasePosition;
     private float cameraShakeUntil;
     private float wheelInputAccumulator;
@@ -313,11 +342,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private RhythmDifficulty selectedDifficulty = RhythmDifficulty.Normal;
     private bool songSelectionVisible = true;
     private bool chartFinished;
-    private bool instructionShown;
     private float lastMurekaBackendStartAttempt = -999f;
     private int score;
     private int combo;
     private int bestCombo;
+    private int successfulHitCount;
+    private float displayedHeartFill;
+    private float displayedColorRecovery;
     private JudgementKind judgementKind = JudgementKind.None;
     private float judgementVisibleUntil;
     private Texture2D goodJudgementTexture;
@@ -330,9 +361,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private GUIStyle comboLabelStyle;
     private GUIStyle smallStyle;
     private GUIStyle guideStyle;
+    private float guiStyleScale = -1f;
     private Font gameFont;
     private SkeletonAnimation characterAnimation;
     private string characterRunAnimation;
+    private string currentCharacterSkin;
     private string lastBlueReactionAnimation;
     private string lastRedReactionAnimation;
     private SkeletonDataAsset blueHitFxData;
@@ -363,13 +396,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         LoadLocalSongs();
     }
 
+    private void OnEnable()
+    {
+        if (Application.isPlaying)
+        {
+            RebindAndAlignParallaxLayers();
+        }
+    }
+
     private void Update()
     {
         ReadInput();
         UpdateNotes();
         UpdateJudgeRing();
         UpdateCameraShake();
+        UpdateParallaxBackground();
         UpdateHitLineBlink();
+        UpdatePromptLane();
+        UpdateHeartAndWorldColor();
     }
 
     private void OnDestroy()
@@ -407,16 +451,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         EnsureGuiStyles();
 
         float scale = Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f);
-        DrawPanel(new Rect(18f * scale, 16f * scale, 210f * scale, 78f * scale), new Color(0.02f, 0.09f, 0.18f, 0.88f));
-        GUI.Label(new Rect(34f * scale, 24f * scale, 180f * scale, 25f * scale), "SCORE", titleStyle);
-        GUI.Label(new Rect(34f * scale, 48f * scale, 180f * scale, 42f * scale), score.ToString("000000"), numberStyle);
+        if (songSelectionVisible)
+        {
+            DrawPanel(new Rect(18f * scale, 16f * scale, 210f * scale, 78f * scale), new Color(0.02f, 0.09f, 0.18f, 0.88f));
+            GUI.Label(new Rect(34f * scale, 24f * scale, 180f * scale, 25f * scale), "SCORE", titleStyle);
+            GUI.Label(new Rect(34f * scale, 48f * scale, 180f * scale, 42f * scale), score.ToString("000000"), numberStyle);
+            DrawLocalSongSelector(scale);
+        }
 
-        Rect comboNumberRect = new Rect((Screen.width - 300f * scale) * 0.5f, 4f * scale, 300f * scale, 68f * scale);
-        Rect comboLabelRect = new Rect(comboNumberRect.x, 65f * scale, comboNumberRect.width, 32f * scale);
-        DrawOutlinedLabel(comboNumberRect, combo.ToString("0000"), comboNumberStyle, new Color(0.12f, 0.04f, 0.16f, 1f), 4f * scale);
-        DrawOutlinedLabel(comboLabelRect, "COMBO", comboLabelStyle, new Color(0.12f, 0.04f, 0.16f, 1f), 3f * scale);
-
-        DrawLocalSongSelector(scale);
+        Rect comboNumberRect = new Rect((Screen.width - 300f * scale) * 0.5f, 30f * scale, 300f * scale, 76f * scale);
+        Rect comboLabelRect = new Rect(comboNumberRect.x, 88f * scale, comboNumberRect.width, 32f * scale);
+        DrawComboNumber(comboNumberRect, combo, comboNumberStyle, new Color(0.12f, 0.04f, 0.16f, 1f), 4f * scale);
+        DrawContinuousGradientOutlinedLabel(
+            comboLabelRect,
+            "COMBO",
+            comboLabelStyle,
+            new Color(0.12f, 0.04f, 0.16f, 1f),
+            3f * scale,
+            new Color(1f, 0.24f, 0.72f, 1f),
+            new Color(0.08f, 0.94f, 1f, 1f));
 
         if (Time.time <= judgementVisibleUntil)
         {
@@ -443,9 +496,20 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void DrawGameplayHud(float scale)
     {
         float heartSize = 104f * scale;
-        DrawUiSheetRegion(
-            new Rect(18f * scale, Screen.height - heartSize - 12f * scale, heartSize, heartSize),
-            851, 606, 552, 527);
+        Rect heartRect = new Rect(18f * scale, Screen.height - heartSize - 12f * scale, heartSize, heartSize);
+        DrawUiSheetRegion(heartRect, 851, 606, 552, 527);
+
+        if (displayedHeartFill > 0.001f)
+        {
+            float filledHeartWidth = heartRect.width * (400f / 552f);
+            float filledHeartHeight = heartRect.height * (386f / 527f);
+            Rect filledHeartRect = new Rect(
+                heartRect.center.x - filledHeartWidth * 0.5f,
+                heartRect.center.y - filledHeartHeight * 0.5f,
+                filledHeartWidth,
+                filledHeartHeight);
+            DrawUiSheetRegionBottomFill(filledHeartRect, 1465, 685, 400, 386, displayedHeartFill);
+        }
 
         float progressWidth = Mathf.Min(520f * scale, Screen.width * 0.42f);
         float progressHeight = 13f * scale;
@@ -715,10 +779,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (wrongTarget != null)
         {
             ApplyMiss(wrongTarget);
-            return;
         }
-
-        FlashJudgement(JudgementKind.Miss);
     }
 
     private Note FindClosestNote(NoteKind kind)
@@ -749,7 +810,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Note FindClosestSameInputFamilyNote(NoteKind inputKind)
     {
         Note best = null;
-        float bestDelta = GetHitWindow(inputKind);
+        float bestDelta = GetMissInputWindow(inputKind);
         double now = AudioSettings.dspTime;
 
         for (int i = 0; i < notes.Count; i++)
@@ -779,6 +840,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static float GetHitWindow(NoteKind kind)
     {
         return IsWheelNote(kind) ? WheelHitWindow : HitWindow;
+    }
+
+    private static float GetMissInputWindow(NoteKind kind)
+    {
+        return IsWheelNote(kind) ? WheelMissInputWindow : TapMissInputWindow;
     }
 
     private static bool IsWheelNote(NoteKind kind)
@@ -811,6 +877,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         combo++;
         bestCombo = Mathf.Max(bestCombo, combo);
         score += points + combo * 12;
+        successfulHitCount++;
         note.Judged = true;
         PlayHitFeedback(note);
         FlashJudgement(judgement);
@@ -828,6 +895,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         combo = 0;
         note.Judged = true;
+        PlayCharacterMissReaction();
         FlashJudgement(JudgementKind.Miss);
         ClearNote(note);
     }
@@ -988,7 +1056,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float followT = 1f - Mathf.Exp(-AutoFollowSpeed * Time.deltaTime);
         judgeRing.position = new Vector3(HitX, Mathf.Lerp(position.y, targetY, followT), 0f);
         judgeRing.localScale = new Vector3(pulse, pulse, 1f);
-        judgeRingRenderer.color = Color.Lerp(new Color(0.72f, 0.92f, 1f, 0.75f), WhiteColor, Mathf.PingPong(Time.time * 1.8f, 1f));
+        float ringAlpha = Mathf.Lerp(0.82f, 1f, Mathf.PingPong(Time.time * 1.8f, 1f));
+        judgeRingRenderer.color = new Color(1f, 1f, 1f, ringAlpha);
     }
 
     private void UpdateHitLineBlink()
@@ -1000,6 +1069,129 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         float phase = Mathf.Repeat(Time.unscaledTime, 1f);
         hitLineRenderer.enabled = phase < 0.56f;
+    }
+
+    private void UpdatePromptLane()
+    {
+        if (promptLaneSegments[0] == null || promptLaneSegments[1] == null)
+        {
+            return;
+        }
+
+        const float scrollSpeed = 0.34f;
+        const float promptClipX = HitX + 0.55f;
+        float delta = scrollSpeed * Time.unscaledDeltaTime;
+        for (int i = 0; i < promptLaneSegments.Length; i++)
+        {
+            promptLaneSegments[i].localPosition += Vector3.left * delta;
+        }
+
+        for (int i = 0; i < promptLaneSegments.Length; i++)
+        {
+            Transform segment = promptLaneSegments[i];
+            if (segment.localPosition.x + promptLaneSegmentWidth >= promptClipX)
+            {
+                continue;
+            }
+
+            Transform other = promptLaneSegments[1 - i];
+            segment.localPosition = new Vector3(
+                other.localPosition.x + promptLaneSegmentWidth + 1.2f,
+                LaneY,
+                0f);
+        }
+
+        for (int i = 0; i < promptLaneSegments.Length; i++)
+        {
+            float hiddenWidth = promptClipX - promptLaneSegments[i].position.x;
+            int hiddenCharacters = Mathf.Clamp(
+                Mathf.CeilToInt(hiddenWidth / Mathf.Max(0.01f, promptLaneCharacterWidth)),
+                0,
+                PromptLaneMessage.Length);
+            if (hiddenCharacters == promptLaneHiddenCharacters[i] || promptLaneTexts[i] == null)
+            {
+                continue;
+            }
+
+            promptLaneHiddenCharacters[i] = hiddenCharacters;
+            if (hiddenCharacters <= 0)
+            {
+                promptLaneTexts[i].text = PromptLaneMessage;
+            }
+            else if (hiddenCharacters >= PromptLaneMessage.Length)
+            {
+                promptLaneTexts[i].text = string.Empty;
+            }
+            else
+            {
+                promptLaneTexts[i].text =
+                    "<color=#FFFFFF00>" + PromptLaneMessage.Substring(0, hiddenCharacters) +
+                    "</color>" + PromptLaneMessage.Substring(hiddenCharacters);
+            }
+        }
+    }
+
+    private float GetHeartFill()
+    {
+        return notes.Count > 0 ? Mathf.Clamp01(successfulHitCount / (float)notes.Count) : 0f;
+    }
+
+    private void UpdateHeartAndWorldColor()
+    {
+        float targetHeartFill = GetHeartFill();
+        ApplyCharacterSkinForHeart(targetHeartFill);
+        displayedHeartFill = Mathf.MoveTowards(displayedHeartFill, targetHeartFill, Time.unscaledDeltaTime * 1.6f);
+
+        float targetColorRecovery = Mathf.Clamp01(targetHeartFill / 0.70f);
+        displayedColorRecovery = targetColorRecovery >= 0.999f
+            ? 1f
+            : Mathf.MoveTowards(displayedColorRecovery, targetColorRecovery, Time.unscaledDeltaTime * 1.8f);
+        ApplyWorldColorRecovery(displayedColorRecovery);
+    }
+
+    private void RegisterColorRecoveryTargets(Transform stage)
+    {
+        colorRecoveryTargets.Clear();
+        SpriteRenderer[] renderers = stage.GetComponentsInChildren<SpriteRenderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            SpriteRenderer renderer = renderers[i];
+            Color original = renderer.color;
+            float luminance = original.r * 0.299f + original.g * 0.587f + original.b * 0.114f;
+            colorRecoveryTargets.Add(new ColorRecoveryTarget
+            {
+                Renderer = renderer,
+                OriginalColor = original,
+                GrayscaleColor = new Color(luminance, luminance, luminance, original.a)
+            });
+        }
+    }
+
+    private void ApplyWorldColorRecovery(float amount)
+    {
+        amount = Mathf.Clamp01(amount);
+        if (backgroundColorRecoveryMaterial != null)
+        {
+            backgroundColorRecoveryMaterial.SetFloat("_ColorRecovery", amount);
+        }
+
+        for (int i = 0; i < colorRecoveryTargets.Count; i++)
+        {
+            ColorRecoveryTarget target = colorRecoveryTargets[i];
+            if (target.Renderer != null)
+            {
+                target.Renderer.color = Color.Lerp(target.GrayscaleColor, target.OriginalColor, amount);
+            }
+        }
+
+        if (gameCamera != null)
+        {
+            float luminance = cameraOriginalBackgroundColor.r * 0.299f
+                + cameraOriginalBackgroundColor.g * 0.587f
+                + cameraOriginalBackgroundColor.b * 0.114f;
+            Color grayscale = new Color(luminance, luminance, luminance, cameraOriginalBackgroundColor.a);
+            gameCamera.backgroundColor = Color.Lerp(grayscale, cameraOriginalBackgroundColor, amount);
+        }
     }
 
     private float GetAutoFollowJudgeY()
@@ -1044,6 +1236,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         wheelInputAccumulator = 0f;
         wheelGestureConsumed = false;
         lastWheelSignalTime = -999f;
+        score = 0;
+        combo = 0;
+        successfulHitCount = 0;
+        displayedHeartFill = 0f;
+        displayedColorRecovery = 0f;
+        ApplyWorldColorRecovery(0f);
         if (chart.Count == 0)
         {
             murekaStatus = isRequestingMurekaSong ? murekaStatus : "Select a local song to play.";
@@ -1054,27 +1252,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         chartDuration = Mathf.Max(generatedSongLength, chart[chart.Count - 1].Time);
         chartFinished = false;
 
-        score = 0;
-        combo = 0;
-
-        bool showTutorialGuides = !instructionShown;
         for (int i = 0; i < chart.Count; i++)
         {
             NoteSpec spec = chart[i];
+            bool showInputGuide = !tutorialKindsShown.Contains(spec.Kind);
             CreateNote(
                 spec.Kind,
                 spec.LaneIndex,
                 songStartDspTime + spec.Time + audioVisualLatency,
-                showTutorialGuides && i < TutorialGuideNoteCount);
+                showInputGuide);
+            if (showInputGuide)
+            {
+                tutorialKindsShown.Add(spec.Kind);
+            }
         }
 
         PlayCurrentSong();
         judgementKind = JudgementKind.None;
         judgementVisibleUntil = 0f;
-        if (showTutorialGuides)
-        {
-            instructionShown = true;
-        }
     }
 
     private void CreateNote(NoteKind kind, int laneIndex, double hitDspTime, bool showInputGuide)
@@ -1091,19 +1286,23 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             CreateLongBody(root.transform, kind);
         }
 
-        Sprite headSprite = GetHeadSprite(kind);
-        GameObject head = new GameObject("Head");
-        head.transform.SetParent(root.transform, false);
-        head.transform.localScale = Vector3.one * 1.22f;
+        if (!isLongNote)
+        {
+            Sprite headSprite = GetHeadSprite(kind);
+            GameObject head = new GameObject("Head");
+            head.transform.SetParent(root.transform, false);
+            head.transform.localScale = Vector3.one * 1.22f;
 
-        SpriteRenderer headRenderer = head.AddComponent<SpriteRenderer>();
-        headRenderer.sprite = headSprite;
-        headRenderer.sortingOrder = 12;
+            SpriteRenderer headRenderer = head.AddComponent<SpriteRenderer>();
+            headRenderer.sprite = headSprite;
+            headRenderer.sortingOrder = 12;
+        }
 
         Transform[] glitchLayers = null;
+        Transform[] glitchBars = null;
         if (kind == NoteKind.BadTap || kind == NoteKind.BadWheelDown)
         {
-            glitchLayers = CreateRedNoteGlitchLayers(root.transform);
+            glitchLayers = CreateRedNoteGlitchLayers(root.transform, out glitchBars);
         }
 
         if (showInputGuide)
@@ -1119,11 +1318,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             Root = root,
             Judged = false,
             GlitchLayers = glitchLayers,
+            GlitchBars = glitchBars,
             GlitchSeed = UnityEngine.Random.Range(0.1f, 999f)
         });
     }
 
-    private static Transform[] CreateRedNoteGlitchLayers(Transform noteRoot)
+    private static Transform[] CreateRedNoteGlitchLayers(Transform noteRoot, out Transform[] glitchBars)
     {
         SpriteRenderer[] sources = noteRoot.GetComponentsInChildren<SpriteRenderer>(true);
         var layers = new List<Transform>(sources.Length * 2);
@@ -1149,35 +1349,62 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 layerRenderer.sortingLayerID = source.sortingLayerID;
                 layerRenderer.sortingOrder = source.sortingOrder + 1 + channel;
                 layerRenderer.color = channel == 0
-                    ? new Color(1f, 0.06f, 0.12f, 0.24f)
-                    : new Color(0.08f, 0.92f, 1f, 0.16f);
+                    ? new Color(1f, 0.03f, 0.1f, 0.34f)
+                    : new Color(0.04f, 0.94f, 1f, 0.28f);
                 layerObject.SetActive(false);
                 layers.Add(layerObject.transform);
             }
         }
 
+        var bars = new List<Transform>(6);
+        for (int i = 0; i < 6; i++)
+        {
+            GameObject barObject = new GameObject("Red Note Noise Bar");
+            barObject.transform.SetParent(noteRoot, false);
+            SpriteRenderer barRenderer = barObject.AddComponent<SpriteRenderer>();
+            barRenderer.sprite = whiteSprite;
+            barRenderer.sortingOrder = 20 + i;
+            switch (i % 3)
+            {
+                case 0:
+                    barRenderer.color = new Color(0.05f, 0.92f, 1f, 0.58f);
+                    break;
+                case 1:
+                    barRenderer.color = new Color(1f, 0.02f, 0.09f, 0.72f);
+                    break;
+                default:
+                    barRenderer.color = new Color(1f, 0.88f, 0.96f, 0.42f);
+                    break;
+            }
+
+            barObject.SetActive(false);
+            bars.Add(barObject.transform);
+        }
+
+        glitchBars = bars.ToArray();
         return layers.ToArray();
     }
 
     private static void UpdateRedNoteGlitch(Note note, ref Vector3 notePosition)
     {
-        if (note.GlitchLayers == null || note.GlitchLayers.Length == 0)
+        if ((note.GlitchLayers == null || note.GlitchLayers.Length == 0)
+            && (note.GlitchBars == null || note.GlitchBars.Length == 0))
         {
             return;
         }
 
-        int glitchFrame = Mathf.FloorToInt(Time.unscaledTime * 28f);
-        float noise = Mathf.PerlinNoise(note.GlitchSeed, glitchFrame * 0.173f);
-        bool active = noise > 0.58f;
-        float strength = noise > 0.82f ? 0.085f : 0.042f;
+        int glitchFrame = Mathf.FloorToInt(Time.unscaledTime * 45f);
+        float noise = Mathf.PerlinNoise(note.GlitchSeed, glitchFrame * 0.219f);
+        bool active = noise > 0.43f;
+        float strength = noise > 0.78f ? 0.13f : 0.065f;
         if (active)
         {
             float horizontal = ((glitchFrame & 1) == 0 ? -1f : 1f) * strength;
-            float vertical = Mathf.Sin(glitchFrame * 2.17f + note.GlitchSeed) * strength * 0.34f;
-            notePosition += new Vector3(horizontal * 0.35f, vertical * 0.35f, 0f);
+            float vertical = Mathf.Sin(glitchFrame * 2.81f + note.GlitchSeed) * strength * 0.4f;
+            notePosition += new Vector3(horizontal * 0.28f, vertical * 0.28f, 0f);
         }
 
-        for (int i = 0; i < note.GlitchLayers.Length; i++)
+        for (int i = 0; note.GlitchLayers != null && i < note.GlitchLayers.Length; i++)
         {
             Transform layer = note.GlitchLayers[i];
             if (layer == null)
@@ -1185,16 +1412,66 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 continue;
             }
 
-            if (layer.gameObject.activeSelf != active)
+            float layerNoise = Mathf.PerlinNoise(note.GlitchSeed + i * 1.37f, glitchFrame * 0.337f);
+            bool layerActive = active && layerNoise > 0.31f;
+            if (layer.gameObject.activeSelf != layerActive)
             {
-                layer.gameObject.SetActive(active);
+                layer.gameObject.SetActive(layerActive);
             }
 
-            if (active)
+            if (layerActive)
             {
                 float direction = (i & 1) == 0 ? -1f : 1f;
-                layer.localPosition = new Vector3(direction * strength, -direction * strength * 0.22f, 0f);
+                float tear = strength * Mathf.Lerp(0.65f, 1.35f, layerNoise);
+                layer.localPosition = new Vector3(
+                    direction * tear,
+                    Mathf.Sin(glitchFrame * 1.91f + i * 2.4f) * strength * 0.3f,
+                    0f);
+                layer.localScale = new Vector3(1f + layerNoise * 0.045f, 1f - layerNoise * 0.025f, 1f);
             }
+        }
+
+        bool longNote = note.Kind == NoteKind.BadWheelDown;
+        for (int i = 0; note.GlitchBars != null && i < note.GlitchBars.Length; i++)
+        {
+            Transform bar = note.GlitchBars[i];
+            if (bar == null)
+            {
+                continue;
+            }
+
+            float barNoise = Mathf.PerlinNoise(note.GlitchSeed + 17f + i * 2.13f, glitchFrame * 0.461f);
+            bool barActive = active && barNoise > 0.38f;
+            if (bar.gameObject.activeSelf != barActive)
+            {
+                bar.gameObject.SetActive(barActive);
+            }
+
+            if (!barActive)
+            {
+                continue;
+            }
+
+            float phase = Mathf.Repeat(barNoise + i * 0.173f + glitchFrame * 0.071f, 1f);
+            if (longNote)
+            {
+                float distance = phase * LongNoteTailDistance;
+                bar.localPosition = new Vector3(
+                    distance * 0.7071f + Mathf.Sin(glitchFrame + i) * 0.08f,
+                    -distance * 0.7071f + Mathf.Cos(glitchFrame * 1.7f + i) * 0.07f,
+                    0f);
+            }
+            else
+            {
+                bar.localPosition = new Vector3(
+                    Mathf.Lerp(-0.72f, 0.72f, phase),
+                    Mathf.Sin(note.GlitchSeed + i * 4.1f + glitchFrame * 0.63f) * 0.62f,
+                    0f);
+            }
+
+            float width = (longNote ? 0.34f : 0.22f) + barNoise * (longNote ? 0.82f : 0.58f);
+            float height = 0.018f + Mathf.Repeat(barNoise * 3.7f, 1f) * 0.045f;
+            bar.localScale = new Vector3(width, height, 1f);
         }
     }
 
@@ -1247,88 +1524,20 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         bool bad = kind == NoteKind.BadWheelDown;
         Sprite sheetSprite = bad ? redLongSprite : blueLongSprite;
-        if (sheetSprite != null)
+        if (sheetSprite == null)
         {
-            Vector2 sheetDirection = bad
-                ? new Vector2(0.72f, -0.72f).normalized
-                : new Vector2(0.72f, 0.72f).normalized;
-            GameObject sheetVisual = new GameObject(bad ? "Red Long Note" : "Blue Long Note");
-            sheetVisual.transform.SetParent(root, false);
-            sheetVisual.transform.localRotation = Quaternion.Euler(0f, 0f, bad ? -135f : -45f);
-            sheetVisual.transform.localScale = Vector3.one * 0.94f;
-
-            SpriteRenderer sheetRenderer = sheetVisual.AddComponent<SpriteRenderer>();
-            sheetRenderer.sprite = sheetSprite;
-            sheetRenderer.sortingOrder = 10;
-
-            GameObject sheetTail = new GameObject("Long Tail Cap");
-            sheetTail.transform.SetParent(root, false);
-            sheetTail.transform.localPosition = new Vector3(
-                sheetDirection.x * LongNoteTailDistance,
-                sheetDirection.y * LongNoteTailDistance,
-                0f);
-            sheetTail.transform.localScale = Vector3.one * 0.64f;
-
-            SpriteRenderer sheetTailRenderer = sheetTail.AddComponent<SpriteRenderer>();
-            sheetTailRenderer.sprite = bad ? badLongTailSprite : goodLongTailSprite;
-            sheetTailRenderer.sortingOrder = 11;
+            Debug.LogWarning("Long-note UI sprite is missing from the UI sheet.");
             return;
         }
 
-        Vector2 direction = bad ? new Vector2(0.72f, -0.72f).normalized : new Vector2(0.72f, 0.72f).normalized;
-        float length = 3.05f;
-        Color bodyColor = bad ? BadColor : GoodColor;
-        Color darkColor = bad ? BadDarkColor : GoodDarkColor;
-        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+        GameObject sheetVisual = new GameObject(bad ? "Red Long Note UI" : "Blue Long Note UI");
+        sheetVisual.transform.SetParent(root, false);
+        sheetVisual.transform.localRotation = Quaternion.Euler(0f, 0f, bad ? -135f : -45f);
+        sheetVisual.transform.localScale = Vector3.one * 0.94f;
 
-        CreateLine(root, "Long Glow", direction, length, 1.05f, new Color(bodyColor.r, bodyColor.g, bodyColor.b, 0.24f), 4);
-        CreateLine(root, "Long Outline", direction, length, 0.82f, WhiteColor, 5);
-        CreateLine(root, "Long Shadow", direction, length, 0.62f, darkColor, 6);
-        CreateLine(root, "Long Fill", direction, length, 0.50f, bodyColor, 7);
-
-        GameObject tail = new GameObject("Tail Cap");
-        tail.transform.SetParent(root, false);
-        tail.transform.localPosition = new Vector3(direction.x * length, direction.y * length, 0f);
-        tail.transform.localScale = Vector3.one * 0.55f;
-
-        SpriteRenderer tailRenderer = tail.AddComponent<SpriteRenderer>();
-        tailRenderer.sprite = bad ? badLongHeadSprite : goodLongHeadSprite;
-        tailRenderer.sortingOrder = 8;
-
-        for (int i = 0; i < 3; i++)
-        {
-            GameObject chevron = new GameObject("Long Chevron");
-            chevron.transform.SetParent(root, false);
-            float distance = 0.82f + i * 0.48f;
-            chevron.transform.localPosition = new Vector3(direction.x * distance, direction.y * distance, 0f);
-            chevron.transform.localRotation = Quaternion.Euler(0f, 0f, angle);
-            chevron.transform.localScale = Vector3.one * 0.42f;
-
-            SpriteRenderer renderer = chevron.AddComponent<SpriteRenderer>();
-            renderer.sprite = rightChevronSprite;
-            renderer.color = new Color(1f, 1f, 1f, 0.92f);
-            renderer.sortingOrder = 9;
-        }
-    }
-
-    private static void CreateLine(Transform root, string name, Vector2 direction, float length, float width, Color color, int sortingOrder)
-    {
-        GameObject lineObject = new GameObject(name);
-        lineObject.transform.SetParent(root, false);
-
-        LineRenderer line = lineObject.AddComponent<LineRenderer>();
-        line.useWorldSpace = false;
-        line.positionCount = 2;
-        line.SetPosition(0, Vector3.zero);
-        line.SetPosition(1, new Vector3(direction.x * length, direction.y * length, 0f));
-        line.startWidth = width;
-        line.endWidth = width;
-        line.numCapVertices = 10;
-        line.numCornerVertices = 10;
-        line.material = lineMaterial;
-        line.startColor = color;
-        line.endColor = color;
-        line.sortingOrder = sortingOrder;
+        SpriteRenderer sheetRenderer = sheetVisual.AddComponent<SpriteRenderer>();
+        sheetRenderer.sprite = sheetSprite;
+        sheetRenderer.sortingOrder = 10;
     }
 
     private static Sprite GetHeadSprite(NoteKind kind)
@@ -1377,6 +1586,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         camera.orthographicSize = 5f;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.12f, 0.035f, 0.38f, 1f);
+        cameraOriginalBackgroundColor = camera.backgroundColor;
         camera.allowMSAA = true;
         QualitySettings.antiAliasing = Mathf.Max(4, QualitySettings.antiAliasing);
         gameCamera = camera;
@@ -1387,17 +1597,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         GameObject stage = new GameObject("Prototype Stage");
 
-        CreateBlock(stage.transform, "Sky", new Vector2(0f, 0.8f), new Vector2(19f, 9.6f), new Color(0.24f, 0.07f, 0.67f, 1f), -20);
-        CreateBlock(stage.transform, "Distant Glow", new Vector2(1.7f, -0.65f), new Vector2(16.5f, 3.15f), new Color(0.78f, 0.22f, 0.94f, 0.42f), -19);
-        CreateBlock(stage.transform, "Distant City", new Vector2(1.7f, -1.55f), new Vector2(16.5f, 2.15f), new Color(0.17f, 0.62f, 0.96f, 0.38f), -18);
-        CreateBlock(stage.transform, "Park Hill", new Vector2(0f, -3.65f), new Vector2(19f, 1.45f), new Color(0.86f, 0.28f, 0.82f, 1f), -15);
-        CreateBlock(stage.transform, "Ground", new Vector2(0f, -4.45f), new Vector2(19f, 1.1f), new Color(1f, 0.33f, 0.74f, 1f), -14);
-        CreateStageDecorations(stage.transform);
-        CreateBlock(stage.transform, "Lane", new Vector2(0f, LaneY), new Vector2(19f, 0.075f), LaneColor, -2);
+        if (!SetupParallaxBackground(stage.transform))
+        {
+            CreateBlock(stage.transform, "Sky", new Vector2(0f, 0.8f), new Vector2(19f, 9.6f), new Color(0.24f, 0.07f, 0.67f, 1f), -20);
+            CreateBlock(stage.transform, "Distant Glow", new Vector2(1.7f, -0.65f), new Vector2(16.5f, 3.15f), new Color(0.78f, 0.22f, 0.94f, 0.42f), -19);
+            CreateBlock(stage.transform, "Distant City", new Vector2(1.7f, -1.55f), new Vector2(16.5f, 2.15f), new Color(0.17f, 0.62f, 0.96f, 0.38f), -18);
+            CreateBlock(stage.transform, "Park Hill", new Vector2(0f, -3.65f), new Vector2(19f, 1.45f), new Color(0.86f, 0.28f, 0.82f, 1f), -15);
+            CreateBlock(stage.transform, "Ground", new Vector2(0f, -4.45f), new Vector2(19f, 1.1f), new Color(1f, 0.33f, 0.74f, 1f), -14);
+            CreateStageDecorations(stage.transform);
+        }
+        RegisterColorRecoveryTargets(stage.transform);
+        CreatePromptLane(stage.transform);
 
-        float hitLineHeight = Mathf.Abs(NoteYs[NoteYs.Length - 1] - NoteYs[0]) + 1.1f;
-        GameObject hitLine = CreateBlock(stage.transform, "Blinking Hit Line", new Vector2(HitX, LaneY), new Vector2(0.065f, hitLineHeight), new Color(0.9f, 1f, 1f, 0.92f), 1);
-        hitLineRenderer = hitLine.GetComponent<SpriteRenderer>();
+        GameObject hitLine = new GameObject("Blinking Search Cursor");
+        hitLine.transform.SetParent(stage.transform, false);
+        hitLine.transform.position = new Vector3(HitX, LaneY, 0f);
+        hitLine.transform.localScale = new Vector3(0.24f, 1f, 1f);
+        hitLineRenderer = hitLine.AddComponent<SpriteRenderer>();
+        hitLineRenderer.sprite = hitLineSprite;
+        hitLineRenderer.sortingOrder = 2;
 
         GameObject ring = new GameObject("Judge Ring");
         ring.transform.SetParent(stage.transform, false);
@@ -1408,6 +1626,240 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         judgeRingRenderer.sortingOrder = 10;
 
         notesRoot = new GameObject("Rhythm Notes").transform;
+        ApplyWorldColorRecovery(0f);
+    }
+
+    private bool SetupParallaxBackground(Transform parent)
+    {
+        Texture2D background = Resources.Load<Texture2D>("Background/bg");
+        Texture2D middleFar = Resources.Load<Texture2D>("Background/mg1");
+        Texture2D middle = Resources.Load<Texture2D>("Background/mg");
+        Texture2D foreground = Resources.Load<Texture2D>("Background/fg");
+        if (background == null || middleFar == null || middle == null || foreground == null)
+        {
+            Debug.LogWarning("Parallax background textures were not imported yet. Using the fallback stage.");
+            return false;
+        }
+
+        parallaxLayers.Clear();
+        float importScale = background.width / BackgroundSourceWidth;
+        float pixelsPerUnit = BackgroundSourcePixelsPerUnit * importScale;
+        CreateParallaxLayer(parent, "BG", background, pixelsPerUnit, 0f, -30, 0.025f);
+        CreateParallaxLayer(parent, "MG1", middleFar, pixelsPerUnit, 5f - middleFar.height / pixelsPerUnit * 0.5f, -27, 0.12f);
+        CreateParallaxLayer(parent, "MG", middle, pixelsPerUnit, -5f + middle.height / pixelsPerUnit * 0.5f, -24, 0.30f);
+        CreateParallaxLayer(parent, "FG", foreground, pixelsPerUnit, -5f + foreground.height / pixelsPerUnit * 0.5f, -10, 1.20f);
+        return true;
+    }
+
+    private void CreateParallaxLayer(
+        Transform parent,
+        string layerName,
+        Texture2D texture,
+        float pixelsPerUnit,
+        float centerY,
+        int sortingOrder,
+        float speed)
+    {
+        Sprite sprite = Sprite.Create(
+            texture,
+            new Rect(0f, 0f, texture.width, texture.height),
+            new Vector2(0.5f, 0.5f),
+            pixelsPerUnit,
+            0,
+            SpriteMeshType.FullRect);
+        float tileWidth = texture.width / pixelsPerUnit;
+        float viewHalfWidth = gameCamera != null
+            ? gameCamera.orthographicSize * gameCamera.aspect
+            : 8.8889f;
+        float firstCenterX = -viewHalfWidth + tileWidth * 0.5f;
+        Transform first = CreateParallaxTile(parent, layerName + " A", sprite, new Vector2(firstCenterX, centerY), sortingOrder);
+        Transform second = CreateParallaxTile(parent, layerName + " B", sprite, new Vector2(firstCenterX + tileWidth - 0.01f, centerY), sortingOrder);
+        parallaxLayers.Add(new ParallaxLayer
+        {
+            FirstTile = first,
+            SecondTile = second,
+            TileWidth = tileWidth - 0.01f,
+            CenterY = centerY,
+            Speed = speed
+        });
+    }
+
+    private static Transform CreateParallaxTile(
+        Transform parent,
+        string name,
+        Sprite sprite,
+        Vector2 position,
+        int sortingOrder)
+    {
+        GameObject tile = new GameObject(name);
+        tile.transform.SetParent(parent, false);
+        tile.transform.localPosition = new Vector3(position.x, position.y, 0f);
+        SpriteRenderer renderer = tile.AddComponent<SpriteRenderer>();
+        renderer.sprite = sprite;
+        renderer.sortingOrder = sortingOrder;
+        if (backgroundColorRecoveryMaterial != null)
+        {
+            renderer.sharedMaterial = backgroundColorRecoveryMaterial;
+        }
+
+        return tile.transform;
+    }
+
+    private void UpdateParallaxBackground()
+    {
+        float deltaTime = Time.deltaTime;
+        for (int i = 0; i < parallaxLayers.Count; i++)
+        {
+            ParallaxLayer layer = parallaxLayers[i];
+            float movement = layer.Speed * deltaTime;
+            layer.FirstTile.localPosition += Vector3.left * movement;
+            layer.SecondTile.localPosition += Vector3.left * movement;
+            WrapParallaxTile(layer.FirstTile, layer.SecondTile, layer.TileWidth);
+            WrapParallaxTile(layer.SecondTile, layer.FirstTile, layer.TileWidth);
+        }
+    }
+
+    private void RebindAndAlignParallaxLayers()
+    {
+        if (gameCamera == null)
+        {
+            gameCamera = Camera.main;
+        }
+
+        if (parallaxLayers.Count == 0)
+        {
+            string[] names = { "BG", "MG1", "MG", "FG" };
+            float[] speeds = { 0.025f, 0.12f, 0.30f, 1.20f };
+            for (int i = 0; i < names.Length; i++)
+            {
+                GameObject firstObject = GameObject.Find(names[i] + " A");
+                GameObject secondObject = GameObject.Find(names[i] + " B");
+                if (firstObject == null || secondObject == null)
+                {
+                    continue;
+                }
+
+                SpriteRenderer renderer = firstObject.GetComponent<SpriteRenderer>();
+                float width = renderer != null ? renderer.bounds.size.x : 0f;
+                if (width <= 0.01f)
+                {
+                    continue;
+                }
+
+                parallaxLayers.Add(new ParallaxLayer
+                {
+                    FirstTile = firstObject.transform,
+                    SecondTile = secondObject.transform,
+                    TileWidth = width - 0.01f,
+                    CenterY = names[i] == "BG"
+                        ? 0f
+                        : names[i] == "MG1"
+                            ? (gameCamera != null ? gameCamera.orthographicSize : 5f) - renderer.bounds.size.y * 0.5f
+                            : -(gameCamera != null ? gameCamera.orthographicSize : 5f) + renderer.bounds.size.y * 0.5f,
+                    Speed = speeds[i]
+                });
+            }
+        }
+
+        float viewLeft = gameCamera != null
+            ? -gameCamera.orthographicSize * gameCamera.aspect
+            : -8.8889f;
+        for (int i = 0; i < parallaxLayers.Count; i++)
+        {
+            ParallaxLayer layer = parallaxLayers[i];
+            if (layer.FirstTile == null || layer.SecondTile == null)
+            {
+                continue;
+            }
+
+            SpriteRenderer renderer = layer.FirstTile.GetComponent<SpriteRenderer>();
+            float layerHeight = renderer != null ? renderer.bounds.size.y : 0f;
+            float viewHalfHeight = gameCamera != null ? gameCamera.orthographicSize : 5f;
+            if (layer.FirstTile.name.StartsWith("MG1", StringComparison.Ordinal))
+            {
+                layer.CenterY = viewHalfHeight - layerHeight * 0.5f;
+            }
+            else if (!layer.FirstTile.name.StartsWith("BG", StringComparison.Ordinal))
+            {
+                layer.CenterY = -viewHalfHeight + layerHeight * 0.5f;
+            }
+
+            Vector3 firstPosition = layer.FirstTile.localPosition;
+            firstPosition.x = viewLeft + layer.TileWidth * 0.5f;
+            firstPosition.y = layer.CenterY;
+            layer.FirstTile.localPosition = firstPosition;
+            Vector3 secondPosition = layer.SecondTile.localPosition;
+            secondPosition.x = firstPosition.x + layer.TileWidth;
+            secondPosition.y = layer.CenterY;
+            layer.SecondTile.localPosition = secondPosition;
+        }
+    }
+
+    private void WrapParallaxTile(Transform tile, Transform other, float tileWidth)
+    {
+        float viewLeft = gameCamera != null
+            ? -gameCamera.orthographicSize * gameCamera.aspect
+            : -8.8889f;
+        if (tile.localPosition.x + tileWidth * 0.5f >= viewLeft)
+        {
+            return;
+        }
+
+        Vector3 position = tile.localPosition;
+        position.x = other.localPosition.x + tileWidth;
+        tile.localPosition = position;
+    }
+
+    private void CreatePromptLane(Transform parent)
+    {
+        if (gameFont == null)
+        {
+            gameFont = Resources.Load<Font>("Fonts/Hakgyoansim_Dunggeunmiso_B");
+        }
+
+        for (int i = 0; i < promptLaneSegments.Length; i++)
+        {
+            GameObject segmentObject = new GameObject("Scrolling Prompt Lane " + (i + 1));
+            segmentObject.transform.SetParent(parent, false);
+
+            TextMesh textMesh = segmentObject.AddComponent<TextMesh>();
+            textMesh.text = PromptLaneMessage;
+            textMesh.anchor = TextAnchor.MiddleLeft;
+            textMesh.alignment = TextAlignment.Left;
+            textMesh.fontSize = 64;
+            textMesh.characterSize = 0.065f;
+            textMesh.fontStyle = FontStyle.Bold;
+            textMesh.richText = true;
+            textMesh.color = new Color(0.94f, 0.96f, 1f, 0.80f);
+            if (gameFont != null)
+            {
+                textMesh.font = gameFont;
+            }
+
+            MeshRenderer renderer = segmentObject.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sortingOrder = -1;
+                if (gameFont != null && gameFont.material != null)
+                {
+                    renderer.sharedMaterial = gameFont.material;
+                }
+            }
+
+            if (i == 0 && renderer != null)
+            {
+                promptLaneSegmentWidth = Mathf.Max(24f, renderer.bounds.size.x);
+                promptLaneCharacterWidth = promptLaneSegmentWidth / Mathf.Max(1, PromptLaneMessage.Length);
+            }
+
+            segmentObject.transform.localPosition = new Vector3(
+                HitX + 0.55f + i * (promptLaneSegmentWidth + 1.2f),
+                LaneY,
+                0f);
+            promptLaneSegments[i] = segmentObject.transform;
+            promptLaneTexts[i] = textMesh;
+            promptLaneHiddenCharacters[i] = -1;
+        }
     }
 
     private static void CreateStageDecorations(Transform stage)
@@ -1498,6 +1950,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         characterAnimation.Initialize(false);
+        ApplyCharacterSkin("Skin0");
         dataAsset.defaultMix = CharacterAnimationMix;
         characterAnimation.AnimationState.Data.DefaultMix = CharacterAnimationMix;
 
@@ -1530,6 +1983,35 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             characterAnimation.AnimationState.SetAnimation(0, characterRunAnimation, true);
         }
+    }
+
+    private void ApplyCharacterSkinForHeart(float heartFill)
+    {
+        float percentage = Mathf.Clamp01(heartFill) * 100f;
+        string skinName = percentage >= 70f
+            ? "Skin70"
+            : percentage >= 40f
+                ? "Skin40"
+                : percentage >= 20f
+                    ? "Skin20"
+                    : "Skin0";
+        ApplyCharacterSkin(skinName);
+    }
+
+    private void ApplyCharacterSkin(string skinName)
+    {
+        if (characterAnimation == null
+            || characterAnimation.Skeleton == null
+            || currentCharacterSkin == skinName
+            || characterAnimation.Skeleton.Data.FindSkin(skinName) == null)
+        {
+            return;
+        }
+
+        characterAnimation.Skeleton.SetSkin(skinName);
+        characterAnimation.Skeleton.SetSlotsToSetupPose();
+        characterAnimation.AnimationState.Apply(characterAnimation.Skeleton);
+        currentCharacterSkin = skinName;
     }
 
     private void PlayCharacterReaction(NoteKind kind)
@@ -1565,6 +2047,28 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         TrackEntry reactionEntry = characterAnimation.AnimationState.SetAnimation(0, reactionName, false);
         reactionEntry.MixDuration = CharacterAnimationMix;
+        if (!string.IsNullOrEmpty(characterRunAnimation))
+        {
+            TrackEntry runEntry = characterAnimation.AnimationState.AddAnimation(0, characterRunAnimation, true, 0f);
+            runEntry.MixDuration = CharacterAnimationMix;
+        }
+    }
+
+    private void PlayCharacterMissReaction()
+    {
+        if (characterAnimation == null || characterAnimation.Skeleton == null)
+        {
+            return;
+        }
+
+        const string missAnimation = "Miss";
+        if (characterAnimation.Skeleton.Data.FindAnimation(missAnimation) == null)
+        {
+            return;
+        }
+
+        TrackEntry missEntry = characterAnimation.AnimationState.SetAnimation(0, missAnimation, false);
+        missEntry.MixDuration = CharacterAnimationMix;
         if (!string.IsNullOrEmpty(characterRunAnimation))
         {
             TrackEntry runEntry = characterAnimation.AnimationState.AddAnimation(0, characterRunAnimation, true, 0f);
@@ -3042,6 +3546,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         eGuideSprite = CreateUiSheetSprite(2516, 31, 498, 498, new Vector2(0.5f, 0.5f), 390f);
         mouseDownGuideSprite = CreateUiSheetSprite(959, 1204, 436, 500, new Vector2(0.5f, 0.5f), 390f);
         mouseUpGuideSprite = CreateUiSheetSprite(1517, 1204, 436, 500, new Vector2(0.5f, 0.5f), 390f);
+        judgeRingSprite = CreateUiSheetSprite(40, 0, 500, 500, new Vector2(0.5f, 0.5f), 300f);
+        hitLineSprite = CreateUiSheetSprite(1180, 30, 120, 500, new Vector2(0.5f, 0.5f), 150f);
     }
 
     private static Sprite CreateUiSheetSprite(int x, int topY, int width, int height, Vector2 pivot, float sourcePixelsPerUnit)
@@ -3063,6 +3569,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         goodJudgementTexture = Resources.Load<Texture2D>("Judgements/02_GOOD");
         greatJudgementTexture = Resources.Load<Texture2D>("Judgements/03_GREAT");
         perfectJudgementTexture = Resources.Load<Texture2D>("Judgements/04_PERFECT");
+        ConfigureJudgementTexture(missJudgementTexture);
+        ConfigureJudgementTexture(goodJudgementTexture);
+        ConfigureJudgementTexture(greatJudgementTexture);
+        ConfigureJudgementTexture(perfectJudgementTexture);
+    }
+
+    private static void ConfigureJudgementTexture(Texture2D texture)
+    {
+        if (texture == null)
+        {
+            return;
+        }
+
+        texture.filterMode = FilterMode.Bilinear;
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.anisoLevel = 1;
     }
 
     private void DrawJudgementImage(float scale)
@@ -3129,14 +3651,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         ApplyGameFontToSkin();
-        if (titleStyle != null)
+        float scale = Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f);
+        if (titleStyle != null && Mathf.Abs(guiStyleScale - scale) < 0.001f)
         {
             return;
         }
 
+        guiStyleScale = scale;
+
         titleStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = Mathf.RoundToInt(18f * Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f)),
+            fontSize = Mathf.RoundToInt(18f * scale),
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleLeft
         };
@@ -3144,7 +3669,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         numberStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = Mathf.RoundToInt(36f * Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f)),
+            fontSize = Mathf.RoundToInt(36f * scale),
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleLeft
         };
@@ -3152,14 +3677,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         comboNumberStyle = new GUIStyle(numberStyle)
         {
-            fontSize = Mathf.RoundToInt(58f * Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f)),
+            fontSize = Mathf.RoundToInt(58f * scale),
             alignment = TextAnchor.MiddleCenter
         };
         comboNumberStyle.normal.textColor = WhiteColor;
 
         comboLabelStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = Mathf.RoundToInt(22f * Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f)),
+            fontSize = Mathf.RoundToInt(22f * scale),
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter
         };
@@ -3167,7 +3692,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         smallStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = Mathf.RoundToInt(16f * Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f)),
+            fontSize = Mathf.RoundToInt(16f * scale),
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleLeft
         };
@@ -3175,7 +3700,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         guideStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = Mathf.RoundToInt(15f * Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f)),
+            fontSize = Mathf.RoundToInt(15f * scale),
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter
         };
@@ -3251,6 +3776,103 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.Label(rect, text, style);
     }
 
+    private static void DrawComboNumber(
+        Rect rect,
+        int value,
+        GUIStyle style,
+        Color outlineColor,
+        float outlineOffset)
+    {
+        string text = Mathf.Max(0, value).ToString("0000");
+        int firstActiveDigit = value <= 0 ? text.Length : text.Length - Mathf.Max(1, value.ToString().Length);
+        Color previousTextColor = style.normal.textColor;
+        style.normal.textColor = new Color(0.46f, 0.46f, 0.50f, 1f);
+        DrawOutlinedLabel(rect, text, style, outlineColor, outlineOffset);
+
+        if (firstActiveDigit < text.Length)
+        {
+            float textWidth = style.CalcSize(new GUIContent(text)).x;
+            float characterWidth = textWidth / text.Length;
+            float textStartX = rect.center.x - textWidth * 0.5f;
+            Rect activeClip = new Rect(
+                textStartX + firstActiveDigit * characterWidth,
+                rect.y,
+                characterWidth * (text.Length - firstActiveDigit),
+                rect.height);
+            DrawGradientTextFill(
+                rect,
+                activeClip,
+                text,
+                style,
+                new Color(1f, 0.20f, 0.70f, 1f),
+                new Color(0.05f, 0.95f, 1f, 1f));
+        }
+
+        style.normal.textColor = previousTextColor;
+    }
+
+    private static void DrawContinuousGradientOutlinedLabel(
+        Rect rect,
+        string text,
+        GUIStyle style,
+        Color outlineColor,
+        float outlineOffset,
+        Color topColor,
+        Color bottomColor)
+    {
+        Color previousTextColor = style.normal.textColor;
+        style.normal.textColor = Color.clear;
+        DrawOutlinedLabel(rect, text, style, outlineColor, outlineOffset);
+        DrawGradientTextFill(rect, rect, text, style, topColor, bottomColor);
+        style.normal.textColor = previousTextColor;
+    }
+
+    private static void DrawGradientTextFill(
+        Rect textRect,
+        Rect clipRect,
+        string text,
+        GUIStyle style,
+        Color topColor,
+        Color bottomColor)
+    {
+        const int slices = 16;
+        float sliceHeight = textRect.height / slices;
+        for (int i = 0; i < slices; i++)
+        {
+            Rect sliceRect = new Rect(
+                clipRect.x,
+                textRect.y + i * sliceHeight,
+                clipRect.width,
+                sliceHeight + 1f);
+            Rect clippedSlice = IntersectRects(sliceRect, clipRect);
+            if (clippedSlice.width <= 0f || clippedSlice.height <= 0f)
+            {
+                continue;
+            }
+
+            GUI.BeginGroup(clippedSlice);
+            style.normal.textColor = Color.Lerp(topColor, bottomColor, i / (float)(slices - 1));
+            GUI.Label(
+                new Rect(
+                    textRect.x - clippedSlice.x,
+                    textRect.y - clippedSlice.y,
+                    textRect.width,
+                    textRect.height),
+                text,
+                style);
+            GUI.EndGroup();
+        }
+    }
+
+    private static Rect IntersectRects(Rect first, Rect second)
+    {
+        float xMin = Mathf.Max(first.xMin, second.xMin);
+        float yMin = Mathf.Max(first.yMin, second.yMin);
+        float xMax = Mathf.Min(first.xMax, second.xMax);
+        float yMax = Mathf.Min(first.yMax, second.yMax);
+        return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+    }
+
     private static void DrawUiSheetRegion(Rect destination, int sourceX, int sourceTopY, int sourceWidth, int sourceHeight)
     {
         if (uiSheetTexture == null)
@@ -3263,6 +3885,34 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             1f - (sourceTopY + sourceHeight) / (float)SourceUiSheetHeight,
             sourceWidth / (float)SourceUiSheetWidth,
             sourceHeight / (float)SourceUiSheetHeight);
+        GUI.DrawTextureWithTexCoords(destination, uiSheetTexture, uv, true);
+    }
+
+    private static void DrawUiSheetRegionBottomFill(
+        Rect fullDestination,
+        int sourceX,
+        int sourceTopY,
+        int sourceWidth,
+        int sourceHeight,
+        float fill)
+    {
+        if (uiSheetTexture == null || fill <= 0f)
+        {
+            return;
+        }
+
+        fill = Mathf.Clamp01(fill);
+        float filledHeight = fullDestination.height * fill;
+        Rect destination = new Rect(
+            fullDestination.x,
+            fullDestination.yMax - filledHeight,
+            fullDestination.width,
+            filledHeight);
+        Rect uv = new Rect(
+            sourceX / (float)SourceUiSheetWidth,
+            1f - (sourceTopY + sourceHeight) / (float)SourceUiSheetHeight,
+            sourceWidth / (float)SourceUiSheetWidth,
+            sourceHeight / (float)SourceUiSheetHeight * fill);
         GUI.DrawTextureWithTexCoords(destination, uiSheetTexture, uv, true);
     }
 
@@ -3281,6 +3931,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             characterAfterimageShader = Resources.Load<Shader>("Shaders/RhythmSpineAfterimage");
         }
 
+        if (backgroundColorRecoveryMaterial == null)
+        {
+            Shader recoveryShader = Resources.Load<Shader>("Shaders/RhythmSpriteColorRecovery");
+            if (recoveryShader != null)
+            {
+                backgroundColorRecoveryMaterial = new Material(recoveryShader);
+            }
+        }
+
         if (whiteSprite != null)
         {
             return;
@@ -3295,22 +3954,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         goodTapSprite = CreateDiamondNoteSprite(GoodColor, WhiteColor);
         badLongHeadSprite = CreateCircleNoteSprite(BadColor, WhiteColor, true);
         goodLongHeadSprite = CreateCircleNoteSprite(GoodColor, WhiteColor, true);
-        badLongTailSprite = CreateCircleNoteSprite(BadDarkColor, WhiteColor, false);
-        goodLongTailSprite = CreateCircleNoteSprite(GoodColor, WhiteColor, false);
-        rightChevronSprite = CreateRightChevronSprite();
-        judgeRingSprite = CreateRingSprite();
         softCircleSprite = CreateSoftCircleSprite();
-
-        Shader shader = Shader.Find("Sprites/Default");
-        if (shader == null)
-        {
-            shader = Shader.Find("Universal Render Pipeline/Unlit");
-        }
-
-        lineMaterial = new Material(shader)
-        {
-            color = Color.white
-        };
     }
 
     private static Sprite CreateSoftCircleSprite()
@@ -3398,40 +4042,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawDoubleLeftChevrons(texture, WhiteColor, Vector2.zero, 6);
         texture.Apply();
         return Sprite.Create(texture, new Rect(0f, 0f, 128f, 128f), new Vector2(0.5f, 0.5f), 100f);
-    }
-
-    private static Sprite CreateRightChevronSprite()
-    {
-        Texture2D texture = CreateTransparentTexture(64, 64);
-        DrawLine(texture, new Vector2(20f, 14f), new Vector2(42f, 32f), WhiteColor, 8);
-        DrawLine(texture, new Vector2(42f, 32f), new Vector2(20f, 50f), WhiteColor, 8);
-        texture.Apply();
-        return Sprite.Create(texture, new Rect(0f, 0f, 64f, 64f), new Vector2(0.5f, 0.5f), 100f);
-    }
-
-    private static Sprite CreateRingSprite()
-    {
-        Texture2D texture = CreateTransparentTexture(160, 160);
-        Vector2 center = new Vector2(79.5f, 79.5f);
-
-        for (int y = 0; y < texture.height; y++)
-        {
-            for (int x = 0; x < texture.width; x++)
-            {
-                float distance = Vector2.Distance(new Vector2(x, y), center);
-                if (distance <= 70f && distance >= 51f)
-                {
-                    texture.SetPixel(x, y, new Color(0.82f, 0.96f, 1f, 0.95f));
-                }
-                else if (distance <= 50f && distance >= 43f)
-                {
-                    texture.SetPixel(x, y, new Color(0.2f, 0.64f, 1f, 0.65f));
-                }
-            }
-        }
-
-        texture.Apply();
-        return Sprite.Create(texture, new Rect(0f, 0f, 160f, 160f), new Vector2(0.5f, 0.5f), 100f);
     }
 
     private static Texture2D CreateTransparentTexture(int width, int height)
