@@ -5,6 +5,15 @@ using UnityEngine.InputSystem;
 [DefaultExecutionOrder(-100)]
 public sealed class RhythmGamePrototype : MonoBehaviour
 {
+    private enum JudgementKind
+    {
+        None,
+        Good,
+        Great,
+        Perfect,
+        Miss
+    }
+
     private enum NoteKind
     {
         BadTap,
@@ -87,13 +96,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private int score;
     private int combo;
     private int bestCombo;
-    private string judgementText = "READY";
-    private Color judgementColor = WhiteColor;
+    private JudgementKind judgementKind = JudgementKind.None;
     private float judgementVisibleUntil;
+    private Texture2D goodJudgementTexture;
+    private Texture2D greatJudgementTexture;
+    private Texture2D perfectJudgementTexture;
+    private Texture2D missJudgementTexture;
     private GUIStyle titleStyle;
     private GUIStyle numberStyle;
     private GUIStyle smallStyle;
-    private GUIStyle judgementStyle;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallOnPlay()
@@ -110,6 +121,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void Awake()
     {
         EnsureSharedAssets();
+        LoadJudgementTextures();
         SetupCamera();
         SetupStage();
         SetupAudio();
@@ -157,8 +169,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         if (Time.time <= judgementVisibleUntil)
         {
-            judgementStyle.normal.textColor = judgementColor;
-            GUI.Label(new Rect(0f, Screen.height * 0.35f, Screen.width, 82f * scale), judgementText, judgementStyle);
+            DrawJudgementImage(scale);
         }
 
         smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.75f);
@@ -217,11 +228,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         Note wrongTarget = FindClosestSameInputFamilyNote(inputKind);
         if (wrongTarget != null)
         {
-            ApplyMiss(wrongTarget, "WRONG");
+            ApplyMiss(wrongTarget);
             return;
         }
 
-        FlashJudgement("EMPTY", new Color(0.8f, 0.86f, 0.95f, 1f));
+        FlashJudgement(JudgementKind.Miss);
     }
 
     private Note FindClosestNote(NoteKind kind)
@@ -287,26 +298,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void ApplyHit(Note note)
     {
         float delta = Mathf.Abs(Time.time - note.HitTime);
-        string label;
-        Color color;
+        JudgementKind judgement;
         int points;
 
         if (delta <= 0.075f)
         {
-            label = "PERFECT";
-            color = new Color(1f, 0.86f, 0.18f, 1f);
+            judgement = JudgementKind.Perfect;
             points = 1000;
         }
         else if (delta <= 0.17f)
         {
-            label = "GREAT";
-            color = new Color(0.5f, 1f, 0.9f, 1f);
+            judgement = JudgementKind.Great;
             points = 650;
         }
         else
         {
-            label = "HIT";
-            color = WhiteColor;
+            judgement = JudgementKind.Good;
             points = 350;
         }
 
@@ -314,15 +321,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         bestCombo = Mathf.Max(bestCombo, combo);
         score += points + combo * 12;
         note.Judged = true;
-        FlashJudgement(label, color);
+        FlashJudgement(judgement);
         ClearNote(note);
     }
 
-    private void ApplyMiss(Note note, string label)
+    private void ApplyMiss(Note note)
     {
         combo = 0;
         note.Judged = true;
-        FlashJudgement(label, new Color(1f, 0.25f, 0.34f, 1f));
+        FlashJudgement(JudgementKind.Miss);
         ClearNote(note);
     }
 
@@ -363,7 +370,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             if (now - note.HitTime > MissWindow)
             {
-                ApplyMiss(note, "MISS");
+                ApplyMiss(note);
             }
         }
 
@@ -444,7 +451,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         PlayGeneratedSong();
-        FlashJudgement("READY", WhiteColor);
+        judgementKind = JudgementKind.None;
+        judgementVisibleUntil = 0f;
     }
 
     private void CreateNote(NoteKind kind, int laneIndex, float hitTime)
@@ -915,10 +923,67 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         renderer.sortingOrder = sortingOrder;
     }
 
-    private void FlashJudgement(string label, Color color)
+    private void LoadJudgementTextures()
     {
-        judgementText = label;
-        judgementColor = color;
+        missJudgementTexture = Resources.Load<Texture2D>("Judgements/01_MISS");
+        goodJudgementTexture = Resources.Load<Texture2D>("Judgements/02_GOOD");
+        greatJudgementTexture = Resources.Load<Texture2D>("Judgements/03_GREAT");
+        perfectJudgementTexture = Resources.Load<Texture2D>("Judgements/04_PERFECT");
+    }
+
+    private void DrawJudgementImage(float scale)
+    {
+        Texture2D texture = GetJudgementTexture(judgementKind);
+        if (texture == null)
+        {
+            return;
+        }
+
+        float remaining = Mathf.Max(0f, judgementVisibleUntil - Time.time);
+        float elapsed = 0.55f - remaining;
+        float pop = 1f + Mathf.Sin(Mathf.Clamp01(elapsed / 0.18f) * Mathf.PI) * 0.1f;
+        float alpha = Mathf.Clamp01(remaining / 0.18f);
+        if (remaining > 0.18f)
+        {
+            alpha = 1f;
+        }
+
+        float width = Mathf.Min(Screen.width * 0.52f, 590f * scale) * pop;
+        float height = width * texture.height / texture.width;
+        float maxHeight = 165f * scale * pop;
+        if (height > maxHeight)
+        {
+            height = maxHeight;
+            width = height * texture.width / texture.height;
+        }
+
+        Rect rect = new Rect((Screen.width - width) * 0.5f, Screen.height * 0.28f, width, height);
+        Color previous = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, alpha);
+        GUI.DrawTexture(rect, texture, ScaleMode.ScaleToFit, true);
+        GUI.color = previous;
+    }
+
+    private Texture2D GetJudgementTexture(JudgementKind kind)
+    {
+        switch (kind)
+        {
+            case JudgementKind.Perfect:
+                return perfectJudgementTexture;
+            case JudgementKind.Great:
+                return greatJudgementTexture;
+            case JudgementKind.Good:
+                return goodJudgementTexture;
+            case JudgementKind.Miss:
+                return missJudgementTexture;
+            default:
+                return null;
+        }
+    }
+
+    private void FlashJudgement(JudgementKind kind)
+    {
+        judgementKind = kind;
         judgementVisibleUntil = Time.time + 0.55f;
     }
 
@@ -953,13 +1018,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         };
         smallStyle.normal.textColor = WhiteColor;
 
-        judgementStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = Mathf.RoundToInt(56f * Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f)),
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter
-        };
-        judgementStyle.normal.textColor = WhiteColor;
     }
 
     private static void DrawControlCard(Rect rect, string input, string label, Color accent, float scale)
