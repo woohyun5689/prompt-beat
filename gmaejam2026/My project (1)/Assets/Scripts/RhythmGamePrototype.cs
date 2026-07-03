@@ -159,6 +159,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float MinTapNoteGap = 0.38f;
     private const float MinLongNoteGap = 0.95f;
     private const float MusicLeadIn = 2.1f;
+    private const float MinimumLoadingScreenDuration = 2.5f;
     private const float HitFxLifetime = 0.28f;
     private const float LongNoteScratchDuration = 0.22f;
     private const float LongNoteTailDistance = 2.74f;
@@ -285,6 +286,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Sprite hitLineSprite;
     private static Sprite whiteSprite;
     private static Sprite softCircleSprite;
+    private static Sprite musicNoteSprite;
+    private static Sprite musicNoteDoubleSprite;
+    private static Sprite loadingGradientSprite;
     private static Texture2D whiteTexture;
     private static Texture2D uiSheetTexture;
     private static Sprite[] redTapSprites;
@@ -372,6 +376,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private float guiStyleScale = -1f;
     private Font gameFont;
     private SkeletonAnimation characterAnimation;
+    private GameObject loadingScreenRoot;
+    private SkeletonAnimation loadingScreenCharacter;
+    private string loadingScreenAnimationName;
+    private bool isLoadingScreenVisible;
+    private float loadingScreenShownAt;
+    private Coroutine loadingScreenFadeRoutine;
     private string characterRunAnimation;
     private string currentCharacterSkin;
     private string lastBlueReactionAnimation;
@@ -459,6 +469,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         EnsureGuiStyles();
 
         float scale = Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f);
+        if (isLoadingScreenVisible)
+        {
+            // The loading composition (character, crescent, "생각 중..." text) is part
+            // of the Spine Loading animation, so no IMGUI is drawn here.
+            return;
+        }
+
         if (songSelectionVisible)
         {
             DrawPanel(new Rect(18f * scale, 16f * scale, 210f * scale, 78f * scale), new Color(0.02f, 0.09f, 0.18f, 0.88f));
@@ -2137,7 +2154,108 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         PlayCharacterReaction(note.Kind);
         PlayHitSound(note.Kind);
         SpawnHitFx(note.Kind, note.LaneY);
+        if (note.Kind == NoteKind.GoodTap || note.Kind == NoteKind.GoodWheelUp)
+        {
+            SpawnCharacterMusicNotes();
+        }
+
         TriggerCameraShake();
+    }
+
+    private void SpawnCharacterMusicNotes()
+    {
+        if (characterAnimation == null || musicNoteSprite == null)
+        {
+            return;
+        }
+
+        Vector3 center = characterAnimation.transform.position + new Vector3(0.35f, 2.9f, 0f);
+        MeshRenderer characterRenderer = characterAnimation.GetComponent<MeshRenderer>();
+        if (characterRenderer != null)
+        {
+            center = characterRenderer.bounds.center + new Vector3(0f, 0.55f, 0f);
+        }
+
+        int count = UnityEngine.Random.Range(3, 5);
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 offset = new Vector3(
+                UnityEngine.Random.Range(-1.15f, 1.25f),
+                UnityEngine.Random.Range(-0.25f, 1.05f),
+                0f);
+            StartCoroutine(FloatingMusicNoteRoutine(center + offset, i * 0.045f));
+        }
+    }
+
+    private static readonly Color[] MusicNotePastelTints =
+    {
+        new Color(0.55f, 0.86f, 1f, 1f),
+        new Color(0.74f, 0.94f, 1f, 1f),
+        new Color(0.62f, 0.98f, 0.92f, 1f),
+        new Color(0.97f, 0.99f, 1f, 1f)
+    };
+
+    private IEnumerator FloatingMusicNoteRoutine(Vector3 startPosition, float startDelay)
+    {
+        if (startDelay > 0f)
+        {
+            yield return new WaitForSecondsRealtime(startDelay);
+        }
+
+        Sprite sprite = UnityEngine.Random.value < 0.35f ? musicNoteDoubleSprite : musicNoteSprite;
+        if (sprite == null)
+        {
+            yield break;
+        }
+
+        GameObject noteObject = new GameObject("Character Music Note");
+        noteObject.transform.position = startPosition;
+        SpriteRenderer renderer = noteObject.AddComponent<SpriteRenderer>();
+        renderer.sprite = sprite;
+        renderer.sortingOrder = 8;
+        Color tint = MusicNotePastelTints[UnityEngine.Random.Range(0, MusicNotePastelTints.Length)];
+        renderer.color = tint;
+
+        float lifetime = UnityEngine.Random.Range(0.72f, 0.95f);
+        float targetScale = UnityEngine.Random.Range(0.62f, 0.9f);
+        float swayPhase = UnityEngine.Random.value * Mathf.PI * 2f;
+        float swaySpeed = UnityEngine.Random.Range(5.5f, 7.5f);
+        float riseDistance = UnityEngine.Random.Range(0.9f, 1.35f);
+        float wobbleDegrees = UnityEngine.Random.Range(9f, 16f);
+
+        float elapsed = 0f;
+        while (elapsed < lifetime && noteObject != null)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / lifetime);
+
+            // Pop in with a springy overshoot, then shrink slightly near the end.
+            float popT = Mathf.Clamp01(elapsed / 0.16f);
+            float overshoot = 1f + Mathf.Sin(popT * Mathf.PI) * 0.35f;
+            float endShrink = 1f - SmoothEdge(0.75f, 1f, t) * 0.25f;
+            float scale = targetScale * Mathf.SmoothStep(0f, 1f, popT) * overshoot * endShrink;
+            noteObject.transform.localScale = new Vector3(scale, scale, 1f);
+
+            float sway = Mathf.Sin(swayPhase + elapsed * swaySpeed) * 0.14f;
+            noteObject.transform.position = startPosition + new Vector3(
+                sway,
+                Mathf.SmoothStep(0f, 1f, t) * riseDistance,
+                0f);
+            noteObject.transform.localRotation = Quaternion.Euler(
+                0f,
+                0f,
+                Mathf.Sin(swayPhase + elapsed * swaySpeed * 0.8f) * wobbleDegrees);
+
+            Color color = tint;
+            color.a = 1f - SmoothEdge(0.55f, 1f, t);
+            renderer.color = color;
+            yield return null;
+        }
+
+        if (noteObject != null)
+        {
+            Destroy(noteObject);
+        }
     }
 
     private void SpawnCharacterAfterimage(NoteKind kind)
@@ -2503,6 +2621,267 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             : "No local songs found. Add MP3 files to Assets/Resources/Music.";
     }
 
+    private void ShowLoadingScreen()
+    {
+        if (loadingScreenRoot == null)
+        {
+            BuildLoadingScreen();
+        }
+
+        if (loadingScreenRoot == null)
+        {
+            return;
+        }
+
+        loadingScreenShownAt = Time.realtimeSinceStartup;
+        isLoadingScreenVisible = true;
+        if (loadingScreenFadeRoutine != null)
+        {
+            StopCoroutine(loadingScreenFadeRoutine);
+            loadingScreenFadeRoutine = null;
+        }
+
+        loadingScreenRoot.SetActive(true);
+        if (loadingScreenCharacter != null && !string.IsNullOrEmpty(loadingScreenAnimationName))
+        {
+            loadingScreenCharacter.AnimationState.SetAnimation(0, loadingScreenAnimationName, true);
+            StartCoroutine(AlignLoadingCharacterRoutine());
+        }
+
+        loadingScreenFadeRoutine = StartCoroutine(FadeLoadingScreenRoutine(0f, 1f, 0.3f, false));
+    }
+
+    private void HideLoadingScreenSmoothly()
+    {
+        if (loadingScreenRoot == null || !loadingScreenRoot.activeSelf)
+        {
+            HideLoadingScreen();
+            return;
+        }
+
+        // The HUD returns immediately while the dark overlay fades away on top of it.
+        isLoadingScreenVisible = false;
+        if (loadingScreenFadeRoutine != null)
+        {
+            StopCoroutine(loadingScreenFadeRoutine);
+        }
+
+        loadingScreenFadeRoutine = StartCoroutine(FadeLoadingScreenRoutine(1f, 0f, 0.75f, true));
+    }
+
+    private IEnumerator FadeLoadingScreenRoutine(float fromAlpha, float toAlpha, float duration, bool deactivateAtEnd)
+    {
+        Vector3 characterStart = loadingScreenCharacter != null
+            ? loadingScreenCharacter.transform.position
+            : Vector3.zero;
+        SetLoadingScreenAlpha(fromAlpha);
+
+        float elapsed = 0f;
+        while (elapsed < duration && loadingScreenRoot != null)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = t * t * (3f - 2f * t);
+            SetLoadingScreenAlpha(Mathf.Lerp(fromAlpha, toAlpha, eased));
+            if (deactivateAtEnd && loadingScreenCharacter != null)
+            {
+                // The character slips away toward the lower-right as the overlay clears.
+                loadingScreenCharacter.transform.position =
+                    characterStart + new Vector3(1.7f, -1.2f, 0f) * eased;
+            }
+
+            yield return null;
+        }
+
+        loadingScreenFadeRoutine = null;
+        if (deactivateAtEnd)
+        {
+            HideLoadingScreen();
+            if (loadingScreenCharacter != null)
+            {
+                loadingScreenCharacter.transform.position = characterStart;
+            }
+
+            SetLoadingScreenAlpha(1f);
+        }
+    }
+
+    private void SetLoadingScreenAlpha(float alpha)
+    {
+        if (loadingScreenRoot == null)
+        {
+            return;
+        }
+
+        alpha = Mathf.Clamp01(alpha);
+        SpriteRenderer[] sprites = loadingScreenRoot.GetComponentsInChildren<SpriteRenderer>(true);
+        for (int i = 0; i < sprites.Length; i++)
+        {
+            Color color = sprites[i].color;
+            color.a = alpha;
+            sprites[i].color = color;
+        }
+
+        if (loadingScreenCharacter != null && loadingScreenCharacter.Skeleton != null)
+        {
+            loadingScreenCharacter.Skeleton.A = alpha;
+        }
+    }
+
+    private IEnumerator AlignLoadingCharacterRoutine()
+    {
+        // Spine rebuilds the mesh in LateUpdate, so real bounds exist one frame later.
+        yield return null;
+        if (!isLoadingScreenVisible || loadingScreenCharacter == null)
+        {
+            yield break;
+        }
+
+        MeshRenderer renderer = loadingScreenCharacter.GetComponent<MeshRenderer>();
+        if (renderer == null)
+        {
+            yield break;
+        }
+
+        Bounds bounds = renderer.bounds;
+        if (bounds.size.sqrMagnitude < 0.0001f)
+        {
+            yield break;
+        }
+
+        float halfHeight = gameCamera != null ? gameCamera.orthographicSize : 5f;
+        float halfWidth = halfHeight * (gameCamera != null ? gameCamera.aspect : 16f / 9f);
+        Vector3 viewCenter = gameCamera != null ? gameCamera.transform.position : Vector3.zero;
+        Vector3 target = new Vector3(
+            viewCenter.x + halfWidth - bounds.extents.x + 0.25f,
+            viewCenter.y - halfHeight + bounds.extents.y + 0.3f,
+            0f);
+        Vector3 delta = target - bounds.center;
+        delta.z = 0f;
+        loadingScreenCharacter.transform.position += delta;
+    }
+
+    private void HideLoadingScreen()
+    {
+        isLoadingScreenVisible = false;
+        if (loadingScreenRoot != null)
+        {
+            loadingScreenRoot.SetActive(false);
+        }
+    }
+
+    private IEnumerator WaitForMinimumLoadingScreen()
+    {
+        if (!isLoadingScreenVisible)
+        {
+            yield break;
+        }
+
+        while (Time.realtimeSinceStartup - loadingScreenShownAt < MinimumLoadingScreenDuration)
+        {
+            yield return null;
+        }
+    }
+
+    private void BuildLoadingScreen()
+    {
+        EnsureSharedAssets();
+        if (loadingGradientSprite == null)
+        {
+            return;
+        }
+
+        float halfHeight = gameCamera != null ? gameCamera.orthographicSize : 5f;
+        float halfWidth = halfHeight * (gameCamera != null ? gameCamera.aspect : 16f / 9f);
+
+        loadingScreenRoot = new GameObject("Loading Screen");
+        if (gameCamera != null)
+        {
+            // Parented to the camera so shake offsets never reveal the stage behind.
+            loadingScreenRoot.transform.SetParent(gameCamera.transform, false);
+            loadingScreenRoot.transform.localPosition = new Vector3(0f, 0f, -gameCamera.transform.position.z);
+        }
+
+        GameObject gradient = new GameObject("Loading Gradient");
+        gradient.transform.SetParent(loadingScreenRoot.transform, false);
+        SpriteRenderer gradientRenderer = gradient.AddComponent<SpriteRenderer>();
+        gradientRenderer.sprite = loadingGradientSprite;
+        gradientRenderer.sortingOrder = 200;
+        gradient.transform.localScale = new Vector3(halfWidth * 2.3f / 4f, halfHeight * 2.2f / 256f, 1f);
+
+        SkeletonDataAsset[] dataAssets = Resources.LoadAll<SkeletonDataAsset>("Spine/Character03");
+        if (dataAssets != null && dataAssets.Length > 0)
+        {
+            SkeletonDataAsset dataAsset = dataAssets[0];
+            SkeletonData skeletonData = dataAsset.GetSkeletonData(true);
+            if (skeletonData != null)
+            {
+                loadingScreenCharacter = SkeletonAnimation.NewSkeletonAnimationGameObject(dataAsset);
+                loadingScreenCharacter.name = "Loading Screen Character";
+                loadingScreenCharacter.transform.SetParent(loadingScreenRoot.transform, false);
+                loadingScreenCharacter.Initialize(false);
+
+                // The character skeleton keeps its body attachments in the SkinN skins,
+                // so without an explicit skin nothing is rendered.
+                Skeleton loadingSkeleton = loadingScreenCharacter.Skeleton;
+                if (loadingSkeleton != null)
+                {
+                    Skin loadingSkin = loadingSkeleton.Data.FindSkin("Skin70");
+                    if (loadingSkin == null)
+                    {
+                        loadingSkin = loadingSkeleton.Data.FindSkin("Skin0");
+                    }
+
+                    if (loadingSkin != null)
+                    {
+                        loadingSkeleton.SetSkin(loadingSkin);
+                        loadingSkeleton.SetSlotsToSetupPose();
+                    }
+                }
+
+                float dataScale = Mathf.Max(0.0001f, dataAsset.scale);
+                float importedHeight = skeletonData.Height * dataScale;
+                float importedCenterX = (skeletonData.X + skeletonData.Width * 0.5f) * dataScale;
+                float importedCenterY = (skeletonData.Y + skeletonData.Height * 0.5f) * dataScale;
+                float characterScale = importedHeight > 0.01f ? 3.3f / importedHeight : 0.12f;
+                loadingScreenCharacter.transform.localScale = Vector3.one * characterScale;
+                // Place the setup-pose bounds center near the lower-right corner of the view.
+                loadingScreenCharacter.transform.localPosition = new Vector3(
+                    halfWidth - 0.7f - importedCenterX * characterScale,
+                    -halfHeight + 2.4f - importedCenterY * characterScale,
+                    0f);
+
+                MeshRenderer characterRenderer = loadingScreenCharacter.GetComponent<MeshRenderer>();
+                if (characterRenderer != null)
+                {
+                    ConfigureSpineRenderer(characterRenderer, 210);
+                }
+
+                loadingScreenAnimationName = FindLoadingAnimationName(skeletonData);
+            }
+        }
+
+        loadingScreenRoot.SetActive(false);
+    }
+
+    private static string FindLoadingAnimationName(SkeletonData skeletonData)
+    {
+        foreach (Spine.Animation animation in skeletonData.Animations)
+        {
+            if (animation.Name.IndexOf("load", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return animation.Name;
+            }
+        }
+
+        if (skeletonData.FindAnimation("Walk") != null)
+        {
+            return "Walk";
+        }
+
+        return skeletonData.FindAnimation("Idle") != null ? "Idle" : null;
+    }
+
     private void PlayLocalSong(int index)
     {
         if (isLoadingLocalSong)
@@ -2522,6 +2901,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private IEnumerator PlayLocalSongRoutine(int index)
     {
         isLoadingLocalSong = true;
+        ShowLoadingScreen();
         LocalSongEntry song = localSongs[index];
         AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
 
@@ -2531,6 +2911,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             {
                 murekaStatus = "Local song file was not found: " + song.Name;
                 isLoadingLocalSong = false;
+                HideLoadingScreen();
                 yield break;
             }
 
@@ -2543,6 +2924,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 {
                     murekaStatus = "Local song load failed: " + request.error;
                     isLoadingLocalSong = false;
+                    HideLoadingScreen();
                     yield break;
                 }
 
@@ -2551,6 +2933,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 {
                     murekaStatus = "Local song could not be decoded by Unity.";
                     isLoadingLocalSong = false;
+                    HideLoadingScreen();
                     yield break;
                 }
 
@@ -2573,6 +2956,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             {
                 murekaStatus = "Audio data could not be prepared: " + song.Name;
                 isLoadingLocalSong = false;
+                HideLoadingScreen();
                 yield break;
             }
         }
@@ -2610,9 +2994,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             generatedSongWarning = "Beat analysis failed; using 128 BPM fallback.";
         }
 
+        yield return WaitForMinimumLoadingScreen();
         RestartChart();
         songSelectionVisible = false;
         isLoadingLocalSong = false;
+        HideLoadingScreenSmoothly();
         murekaStatus = "Playing " + song.Name + " — " + GetDifficultyPreset().Label + " — detected " + generatedBpm.ToString("0.0") + " BPM";
     }
 
@@ -2942,6 +3328,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private IEnumerator DownloadMurekaAudio(string audioUrl)
     {
         murekaStatus = "Downloading MUREKA audio...";
+        ShowLoadingScreen();
         using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(audioUrl, GuessAudioType(audioUrl)))
         {
             request.timeout = 90;
@@ -2950,6 +3337,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             if (request.result != UnityWebRequest.Result.Success)
             {
                 murekaStatus = "MUREKA audio download failed: " + request.error;
+                HideLoadingScreen();
                 yield break;
             }
 
@@ -2957,6 +3345,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             if (generatedSongClip == null)
             {
                 murekaStatus = "MUREKA audio could not be decoded by Unity.";
+                HideLoadingScreen();
                 yield break;
             }
 
@@ -2993,7 +3382,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             BuildChartForMurekaSong(CreateChartRandom());
         }
 
+        yield return WaitForMinimumLoadingScreen();
         RestartChart();
+        songSelectionVisible = false;
+        HideLoadingScreenSmoothly();
         murekaStatus = string.IsNullOrWhiteSpace(generatedSongWarning)
             ? "MUREKA song ready."
             : "MUREKA song ready. " + generatedSongWarning;
@@ -3950,6 +4342,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
         }
 
+        if (musicNoteSprite == null)
+        {
+            musicNoteSprite = CreateMusicNoteSprite(false);
+            musicNoteDoubleSprite = CreateMusicNoteSprite(true);
+        }
+
+        if (loadingGradientSprite == null)
+        {
+            loadingGradientSprite = CreateLoadingGradientSprite();
+        }
+
         if (whiteSprite != null)
         {
             return;
@@ -3965,6 +4368,137 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         badLongHeadSprite = CreateCircleNoteSprite(BadColor, WhiteColor, true);
         goodLongHeadSprite = CreateCircleNoteSprite(GoodColor, WhiteColor, true);
         softCircleSprite = CreateSoftCircleSprite();
+    }
+
+    private static Sprite CreateLoadingGradientSprite()
+    {
+        const int height = 256;
+        Texture2D texture = new Texture2D(4, height, TextureFormat.RGBA32, false)
+        {
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+
+        Color top = new Color(0.11f, 0.11f, 0.12f, 1f);
+        Color bottom = new Color(0.012f, 0.012f, 0.016f, 1f);
+        for (int y = 0; y < height; y++)
+        {
+            Color color = Color.Lerp(bottom, top, Mathf.Pow(y / (float)(height - 1), 1.35f));
+            for (int x = 0; x < 4; x++)
+            {
+                texture.SetPixel(x, y, color);
+            }
+        }
+
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0f, 0f, 4f, height), new Vector2(0.5f, 0.5f), 1f);
+    }
+
+    private static Sprite CreateMusicNoteSprite(bool beamed)
+    {
+        // Drawn as white fill with a gray outline so a runtime tint produces a
+        // pastel note body with a darker border of the same hue.
+        const int size = 128;
+        const float outlineWidth = 6f;
+        Texture2D texture = CreateTransparentTexture(size, size);
+        Color outlineShade = new Color(0.38f, 0.38f, 0.46f, 1f);
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                Vector2 p = new Vector2(x, y);
+                float distance = beamed
+                    ? DoubleMusicNoteDistance(p)
+                    : SingleMusicNoteDistance(p);
+
+                float fillAlpha = 1f - SmoothEdge(-1.5f, 1.5f, distance);
+                float outlineAlpha = 1f - SmoothEdge(outlineWidth - 1.5f, outlineWidth + 1.5f, distance);
+                if (outlineAlpha <= 0f)
+                {
+                    continue;
+                }
+
+                Color color = Color.Lerp(outlineShade, Color.white, fillAlpha);
+                color.a = outlineAlpha;
+                texture.SetPixel(x, y, color);
+            }
+        }
+
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    // GLSL-style smoothstep: 0 below edge0, 1 above edge1. Unity's Mathf.SmoothStep
+    // interpolates from..to by t instead, so it cannot be used for edge thresholds.
+    private static float SmoothEdge(float edge0, float edge1, float x)
+    {
+        float t = Mathf.Clamp01((x - edge0) / (edge1 - edge0));
+        return t * t * (3f - 2f * t);
+    }
+
+    private static float SingleMusicNoteDistance(Vector2 p)
+    {
+        // Eighth note: tilted round head, stem, and a curved flag.
+        float head = TiltedEllipseDistance(p, new Vector2(46f, 30f), 21f, 15f, -22f);
+        float stem = SegmentDistance(p, new Vector2(63f, 36f), new Vector2(63f, 102f)) - 5f;
+        float flag = BezierBandDistance(
+            p,
+            new Vector2(63f, 102f),
+            new Vector2(92f, 94f),
+            new Vector2(86f, 62f),
+            5f);
+        return Mathf.Min(head, Mathf.Min(stem, flag));
+    }
+
+    private static float DoubleMusicNoteDistance(Vector2 p)
+    {
+        // Beamed pair: two heads, two stems, and a thick slanted beam on top.
+        float leftHead = TiltedEllipseDistance(p, new Vector2(30f, 30f), 17f, 13f, -20f);
+        float rightHead = TiltedEllipseDistance(p, new Vector2(86f, 38f), 17f, 13f, -20f);
+        float leftStem = SegmentDistance(p, new Vector2(44f, 34f), new Vector2(44f, 96f)) - 4.5f;
+        float rightStem = SegmentDistance(p, new Vector2(100f, 42f), new Vector2(100f, 104f)) - 4.5f;
+        float beam = SegmentDistance(p, new Vector2(43f, 94f), new Vector2(101f, 102f)) - 7f;
+        float distance = Mathf.Min(leftHead, rightHead);
+        distance = Mathf.Min(distance, Mathf.Min(leftStem, rightStem));
+        return Mathf.Min(distance, beam);
+    }
+
+    private static float TiltedEllipseDistance(Vector2 p, Vector2 center, float radiusX, float radiusY, float tiltDegrees)
+    {
+        float radians = tiltDegrees * Mathf.Deg2Rad;
+        float cos = Mathf.Cos(radians);
+        float sin = Mathf.Sin(radians);
+        Vector2 local = p - center;
+        Vector2 rotated = new Vector2(local.x * cos + local.y * sin, -local.x * sin + local.y * cos);
+        Vector2 scaled = new Vector2(rotated.x / radiusX, rotated.y / radiusY);
+        return (scaled.magnitude - 1f) * Mathf.Min(radiusX, radiusY);
+    }
+
+    private static float SegmentDistance(Vector2 p, Vector2 a, Vector2 b)
+    {
+        Vector2 ab = b - a;
+        float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / Mathf.Max(0.0001f, ab.sqrMagnitude));
+        return Vector2.Distance(p, a + ab * t);
+    }
+
+    private static float BezierBandDistance(Vector2 p, Vector2 start, Vector2 control, Vector2 end, float halfWidth)
+    {
+        const int samples = 14;
+        float best = float.MaxValue;
+        Vector2 previous = start;
+        for (int i = 1; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            Vector2 point = Vector2.LerpUnclamped(
+                Vector2.LerpUnclamped(start, control, t),
+                Vector2.LerpUnclamped(control, end, t),
+                t);
+            best = Mathf.Min(best, SegmentDistance(p, previous, point));
+            previous = point;
+        }
+
+        return best - halfWidth;
     }
 
     private static Sprite CreateSoftCircleSprite()
