@@ -50,6 +50,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public float LaneY;
         public GameObject Root;
         public bool Judged;
+        public Transform[] GlitchLayers;
+        public float GlitchSeed;
     }
 
     private sealed class SongAnalysis
@@ -107,7 +109,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float LongNoteScratchDuration = 0.22f;
     private const float LongNoteTailDistance = 2.74f;
     private const float BlueLongNoteVerticalOffset = 1.94f;
-    private const float CharacterAfterimageDuration = 0.12f;
+    private const float CharacterAfterimageDuration = 0.16f;
     private const float WheelGestureThreshold = 0.35f;
     private const float WheelGestureReleaseDelay = 0.065f;
     private const float CharacterAnimationMix = 0.045f;
@@ -158,6 +160,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Sprite eGuideSprite;
     private static Sprite mouseDownGuideSprite;
     private static Sprite mouseUpGuideSprite;
+    private static Shader characterAfterimageShader;
 
     private readonly List<Note> notes = new List<Note>();
     private readonly List<NoteSpec> chart = new List<NoteSpec>();
@@ -794,7 +797,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             if (note.Root != null)
             {
-                note.Root.transform.position = new Vector3(x, note.LaneY, 0f);
+                Vector3 notePosition = new Vector3(x, note.LaneY, 0f);
+                UpdateRedNoteGlitch(note, ref notePosition);
+                note.Root.transform.position = notePosition;
                 bool visible = x <= SpawnX && x >= DespawnX;
                 if (note.Root.activeSelf != visible)
                 {
@@ -941,6 +946,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         headRenderer.sprite = headSprite;
         headRenderer.sortingOrder = 12;
 
+        Transform[] glitchLayers = null;
+        if (kind == NoteKind.BadTap || kind == NoteKind.BadWheelDown)
+        {
+            glitchLayers = CreateRedNoteGlitchLayers(root.transform);
+        }
+
         if (showInputGuide)
         {
             CreateNoteInputGuide(root.transform, kind);
@@ -952,8 +963,85 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             HitDspTime = hitDspTime,
             LaneY = laneY,
             Root = root,
-            Judged = false
+            Judged = false,
+            GlitchLayers = glitchLayers,
+            GlitchSeed = UnityEngine.Random.Range(0.1f, 999f)
         });
+    }
+
+    private static Transform[] CreateRedNoteGlitchLayers(Transform noteRoot)
+    {
+        SpriteRenderer[] sources = noteRoot.GetComponentsInChildren<SpriteRenderer>(true);
+        var layers = new List<Transform>(sources.Length * 2);
+        for (int i = 0; i < sources.Length; i++)
+        {
+            SpriteRenderer source = sources[i];
+            if (source == null || source.sprite == null)
+            {
+                continue;
+            }
+
+            for (int channel = 0; channel < 2; channel++)
+            {
+                GameObject layerObject = new GameObject(channel == 0 ? "Red Glitch Split" : "Cyan Glitch Split");
+                layerObject.transform.SetParent(source.transform, false);
+
+                SpriteRenderer layerRenderer = layerObject.AddComponent<SpriteRenderer>();
+                layerRenderer.sprite = source.sprite;
+                layerRenderer.flipX = source.flipX;
+                layerRenderer.flipY = source.flipY;
+                layerRenderer.drawMode = source.drawMode;
+                layerRenderer.size = source.size;
+                layerRenderer.sortingLayerID = source.sortingLayerID;
+                layerRenderer.sortingOrder = source.sortingOrder + 1 + channel;
+                layerRenderer.color = channel == 0
+                    ? new Color(1f, 0.06f, 0.12f, 0.24f)
+                    : new Color(0.08f, 0.92f, 1f, 0.16f);
+                layerObject.SetActive(false);
+                layers.Add(layerObject.transform);
+            }
+        }
+
+        return layers.ToArray();
+    }
+
+    private static void UpdateRedNoteGlitch(Note note, ref Vector3 notePosition)
+    {
+        if (note.GlitchLayers == null || note.GlitchLayers.Length == 0)
+        {
+            return;
+        }
+
+        int glitchFrame = Mathf.FloorToInt(Time.unscaledTime * 28f);
+        float noise = Mathf.PerlinNoise(note.GlitchSeed, glitchFrame * 0.173f);
+        bool active = noise > 0.58f;
+        float strength = noise > 0.82f ? 0.085f : 0.042f;
+        if (active)
+        {
+            float horizontal = ((glitchFrame & 1) == 0 ? -1f : 1f) * strength;
+            float vertical = Mathf.Sin(glitchFrame * 2.17f + note.GlitchSeed) * strength * 0.34f;
+            notePosition += new Vector3(horizontal * 0.35f, vertical * 0.35f, 0f);
+        }
+
+        for (int i = 0; i < note.GlitchLayers.Length; i++)
+        {
+            Transform layer = note.GlitchLayers[i];
+            if (layer == null)
+            {
+                continue;
+            }
+
+            if (layer.gameObject.activeSelf != active)
+            {
+                layer.gameObject.SetActive(active);
+            }
+
+            if (active)
+            {
+                float direction = (i & 1) == 0 ? -1f : 1f;
+                layer.localPosition = new Vector3(direction * strength, -direction * strength * 0.22f, 0f);
+            }
+        }
     }
 
     private static void CreateNoteInputGuide(Transform noteRoot, NoteKind kind)
@@ -1356,19 +1444,54 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         MeshFilter ghostFilter = ghost.AddComponent<MeshFilter>();
         ghostFilter.sharedMesh = snapshotMesh;
+        if (characterAfterimageShader == null)
+        {
+            characterAfterimageShader = Resources.Load<Shader>("Shaders/RhythmSpineAfterimage");
+        }
+
+        if (characterAfterimageShader == null)
+        {
+            Destroy(snapshotMesh);
+            Destroy(ghost);
+            return;
+        }
+
+        Material[] sourceMaterials = sourceRenderer.sharedMaterials;
+        Material[] ghostMaterials = new Material[sourceMaterials.Length];
+        for (int i = 0; i < sourceMaterials.Length; i++)
+        {
+            Material sourceMaterial = sourceMaterials[i];
+            Material ghostMaterial = new Material(characterAfterimageShader)
+            {
+                name = "Character Afterimage Material"
+            };
+            if (sourceMaterial != null)
+            {
+                ghostMaterial.mainTexture = sourceMaterial.mainTexture;
+                ghostMaterial.mainTextureOffset = sourceMaterial.mainTextureOffset;
+                ghostMaterial.mainTextureScale = sourceMaterial.mainTextureScale;
+            }
+
+            ghostMaterials[i] = ghostMaterial;
+        }
+
         MeshRenderer ghostRenderer = ghost.AddComponent<MeshRenderer>();
-        ghostRenderer.sharedMaterials = sourceRenderer.sharedMaterials;
+        ghostRenderer.sharedMaterials = ghostMaterials;
         ghostRenderer.sortingLayerID = sourceRenderer.sortingLayerID;
         ConfigureSpineRenderer(ghostRenderer, sourceRenderer.sortingOrder - 1);
         ghost.SetActive(false);
 
         Color tint = kind == NoteKind.BadTap || kind == NoteKind.BadWheelDown
-            ? new Color(1f, 0.38f, 0.62f, 1f)
-            : new Color(0.28f, 0.88f, 1f, 1f);
-        StartCoroutine(FadeCharacterAfterimageRoutine(ghost, snapshotMesh, tint));
+            ? new Color(1f, 0.18f, 0.42f, 1f)
+            : new Color(0.12f, 0.82f, 1f, 1f);
+        StartCoroutine(FadeCharacterAfterimageRoutine(ghost, snapshotMesh, ghostMaterials, tint));
     }
 
-    private static IEnumerator FadeCharacterAfterimageRoutine(GameObject ghost, Mesh snapshotMesh, Color tint)
+    private static IEnumerator FadeCharacterAfterimageRoutine(
+        GameObject ghost,
+        Mesh snapshotMesh,
+        Material[] ghostMaterials,
+        Color tint)
     {
         // The mesh was captured before the reaction animation was applied. Wait one
         // rendered frame so the original character advances, then reveal only that
@@ -1376,41 +1499,27 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         yield return null;
         if (ghost == null || snapshotMesh == null)
         {
+            DestroyAfterimageResources(snapshotMesh, ghostMaterials);
             yield break;
         }
 
         ghost.SetActive(true);
-        Color32[] sourceColors = snapshotMesh.colors32;
-        if (sourceColors == null || sourceColors.Length != snapshotMesh.vertexCount)
-        {
-            sourceColors = new Color32[snapshotMesh.vertexCount];
-            for (int i = 0; i < sourceColors.Length; i++)
-            {
-                sourceColors[i] = new Color32(255, 255, 255, 255);
-            }
-        }
-
-        Color32[] fadedColors = new Color32[sourceColors.Length];
         float elapsed = 0f;
 
         while (elapsed < CharacterAfterimageDuration && ghost != null)
         {
             elapsed += Time.unscaledDeltaTime;
             float t = Mathf.Clamp01(elapsed / CharacterAfterimageDuration);
-            float fade = (1f - Mathf.SmoothStep(0f, 1f, t)) * 0.26f;
-            float colorFade = Mathf.Lerp(1f, 0.55f, t) * fade;
-
-            for (int i = 0; i < sourceColors.Length; i++)
+            float fade = (1f - Mathf.SmoothStep(0f, 1f, t)) * 0.38f;
+            Color fadedTint = new Color(tint.r, tint.g, tint.b, fade);
+            for (int i = 0; i < ghostMaterials.Length; i++)
             {
-                Color32 source = sourceColors[i];
-                fadedColors[i] = new Color32(
-                    (byte)Mathf.Clamp(source.r * tint.r * colorFade, 0f, 255f),
-                    (byte)Mathf.Clamp(source.g * tint.g * colorFade, 0f, 255f),
-                    (byte)Mathf.Clamp(source.b * tint.b * colorFade, 0f, 255f),
-                    (byte)Mathf.Clamp(source.a * fade, 0f, 255f));
+                if (ghostMaterials[i] != null)
+                {
+                    ghostMaterials[i].SetColor("_TintColor", fadedTint);
+                }
             }
 
-            snapshotMesh.colors32 = fadedColors;
             yield return null;
         }
 
@@ -1419,9 +1528,27 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             Destroy(ghost);
         }
 
+        DestroyAfterimageResources(snapshotMesh, ghostMaterials);
+    }
+
+    private static void DestroyAfterimageResources(Mesh snapshotMesh, Material[] ghostMaterials)
+    {
         if (snapshotMesh != null)
         {
             Destroy(snapshotMesh);
+        }
+
+        if (ghostMaterials == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < ghostMaterials.Length; i++)
+        {
+            if (ghostMaterials[i] != null)
+            {
+                Destroy(ghostMaterials[i]);
+            }
         }
     }
 
@@ -2750,6 +2877,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private static void EnsureSharedAssets()
     {
+        if (characterAfterimageShader == null)
+        {
+            characterAfterimageShader = Resources.Load<Shader>("Shaders/RhythmSpineAfterimage");
+        }
+
         if (whiteSprite != null)
         {
             return;
