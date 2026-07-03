@@ -45,6 +45,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float MissWindow = 0.42f;
     private const float AutoFollowLookAhead = 1.85f;
     private const float AutoFollowSpeed = 12f;
+    private const float MusicLeadIn = 2.1f;
+    private const int SongSampleRate = 44100;
+    private const int SongBars = 8;
+    private const int BeatsPerBar = 4;
 
     private static readonly Color BadColor = new Color(1f, 0.12f, 0.12f, 1f);
     private static readonly Color BadDarkColor = new Color(0.55f, 0.02f, 0.04f, 1f);
@@ -65,30 +69,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Texture2D whiteTexture;
 
     private readonly List<Note> notes = new List<Note>();
-    private readonly NoteSpec[] chart =
-    {
-        new NoteSpec(0.85f, NoteKind.BadTap, 1),
-        new NoteSpec(1.45f, NoteKind.GoodTap, 2),
-        new NoteSpec(2.05f, NoteKind.BadTap, 0),
-        new NoteSpec(2.65f, NoteKind.GoodTap, 1),
-        new NoteSpec(3.35f, NoteKind.BadWheelDown, 2),
-        new NoteSpec(4.35f, NoteKind.GoodTap, 0),
-        new NoteSpec(5.05f, NoteKind.GoodWheelUp, 1),
-        new NoteSpec(6.25f, NoteKind.BadTap, 2),
-        new NoteSpec(6.9f, NoteKind.GoodTap, 0),
-        new NoteSpec(7.55f, NoteKind.BadWheelDown, 1),
-        new NoteSpec(8.7f, NoteKind.GoodWheelUp, 0),
-        new NoteSpec(9.9f, NoteKind.BadTap, 2),
-        new NoteSpec(10.55f, NoteKind.GoodTap, 1),
-        new NoteSpec(11.2f, NoteKind.BadTap, 0),
-        new NoteSpec(11.9f, NoteKind.GoodWheelUp, 2),
-    };
+    private readonly List<NoteSpec> chart = new List<NoteSpec>();
 
     private Transform notesRoot;
     private Transform judgeRing;
     private SpriteRenderer judgeRingRenderer;
+    private AudioSource musicSource;
+    private AudioClip generatedSongClip;
     private float songStartTime;
     private float chartDuration;
+    private float generatedBpm = 128f;
+    private float generatedSongLength = 14f;
+    private int generatedSongSeed;
+    private string generatedSongLabel = "AI SONG";
     private int score;
     private int combo;
     private int bestCombo;
@@ -117,6 +110,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         EnsureSharedAssets();
         SetupCamera();
         SetupStage();
+        SetupAudio();
+        GenerateNewSong();
         RestartChart();
     }
 
@@ -125,6 +120,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         ReadInput();
         UpdateNotes();
         UpdateJudgeRing();
+    }
+
+    private void OnDestroy()
+    {
+        if (generatedSongClip != null)
+        {
+            Destroy(generatedSongClip);
+            generatedSongClip = null;
+        }
     }
 
     private void OnGUI()
@@ -156,6 +160,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.75f);
+        GUI.Label(new Rect(18f * scale, Screen.height - 64f * scale, 360f * scale, 28f * scale), generatedSongLabel + "  " + Mathf.RoundToInt(generatedBpm) + " BPM", smallStyle);
         GUI.Label(new Rect(18f * scale, Screen.height - 38f * scale, 250f * scale, 28f * scale), "BEST " + bestCombo + "x", smallStyle);
     }
 
@@ -172,6 +177,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             if (keyboard.eKey.wasPressedThisFrame)
             {
                 TryHit(NoteKind.BadTap);
+            }
+
+            if (keyboard.rKey.wasPressedThisFrame)
+            {
+                GenerateNewSong();
+                RestartChart();
             }
         }
 
@@ -356,6 +367,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         if (allJudged && now > songStartTime + chartDuration + 1.1f)
         {
+            GenerateNewSong();
             RestartChart();
         }
     }
@@ -415,15 +427,21 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         notes.Clear();
-        songStartTime = Time.time + 2.1f;
-        chartDuration = chart[chart.Length - 1].Time;
+        if (chart.Count == 0)
+        {
+            GenerateNewSong();
+        }
 
-        for (int i = 0; i < chart.Length; i++)
+        songStartTime = Time.time + MusicLeadIn;
+        chartDuration = Mathf.Max(generatedSongLength, chart[chart.Count - 1].Time);
+
+        for (int i = 0; i < chart.Count; i++)
         {
             NoteSpec spec = chart[i];
             CreateNote(spec.Kind, spec.LaneIndex, songStartTime + spec.Time);
         }
 
+        PlayGeneratedSong();
         FlashJudgement("READY", WhiteColor);
     }
 
@@ -578,6 +596,269 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         judgeRingRenderer.sortingOrder = 10;
 
         notesRoot = new GameObject("Rhythm Notes").transform;
+    }
+
+    private void SetupAudio()
+    {
+        musicSource = GetComponent<AudioSource>();
+        if (musicSource == null)
+        {
+            musicSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        musicSource.playOnAwake = false;
+        musicSource.loop = false;
+        musicSource.spatialBlend = 0f;
+        musicSource.volume = 0.72f;
+    }
+
+    private void GenerateNewSong()
+    {
+        if (musicSource != null)
+        {
+            musicSource.Stop();
+        }
+
+        if (generatedSongClip != null)
+        {
+            Destroy(generatedSongClip);
+            generatedSongClip = null;
+        }
+
+        generatedSongSeed = UnityEngine.Random.Range(10000, 999999);
+        var rng = new System.Random(generatedSongSeed);
+        int[] bpmChoices = { 116, 124, 132, 140 };
+        string[] songNames = { "AI POP", "AI DASH", "AI SKY", "AI SPARK" };
+
+        generatedBpm = bpmChoices[rng.Next(bpmChoices.Length)];
+        generatedSongLabel = songNames[rng.Next(songNames.Length)] + " " + (generatedSongSeed % 1000).ToString("000");
+        generatedSongClip = BuildProceduralSong(rng);
+    }
+
+    private AudioClip BuildProceduralSong(System.Random rng)
+    {
+        chart.Clear();
+
+        float beatDuration = 60f / generatedBpm;
+        generatedSongLength = SongBars * BeatsPerBar * beatDuration;
+        int sampleCount = Mathf.CeilToInt((generatedSongLength + 1.2f) * SongSampleRate);
+        float[] samples = new float[sampleCount];
+
+        int[] rootOptions = { 55, 57, 60, 62, 64 };
+        int[] melodyOffsets = { 0, 2, 4, 7, 9, 12, 14, 16 };
+        int[][] progressions =
+        {
+            new[] { 0, 7, 9, 5 },
+            new[] { 0, 5, 7, 0 },
+            new[] { 0, 9, 5, 7 },
+        };
+
+        int rootMidi = rootOptions[rng.Next(rootOptions.Length)];
+        int[] progression = progressions[rng.Next(progressions.Length)];
+        int laneCursor = 1;
+
+        for (int bar = 0; bar < SongBars; bar++)
+        {
+            float barStart = bar * BeatsPerBar * beatDuration;
+            int chordOffset = progression[bar % progression.Length];
+
+            AddTone(samples, barStart, beatDuration * 3.85f, MidiToFrequency(rootMidi + chordOffset - 12), 0.055f, 0);
+            AddTone(samples, barStart, beatDuration * 3.85f, MidiToFrequency(rootMidi + chordOffset), 0.035f, 0);
+            AddTone(samples, barStart, beatDuration * 3.85f, MidiToFrequency(rootMidi + chordOffset + 7), 0.03f, 0);
+
+            for (int beat = 0; beat < BeatsPerBar; beat++)
+            {
+                float noteTime = barStart + beat * beatDuration;
+
+                if (beat == 0 || beat == 2)
+                {
+                    AddKick(samples, noteTime, 0.55f);
+                    AddTone(samples, noteTime, beatDuration * 0.42f, MidiToFrequency(rootMidi + chordOffset - 24), 0.11f, 1);
+                }
+                else
+                {
+                    AddSnare(samples, noteTime, rng, 0.28f);
+                }
+
+                AddHat(samples, noteTime, rng, 0.12f);
+                AddHat(samples, noteTime + beatDuration * 0.5f, rng, 0.08f);
+
+                if (bar == 0 && beat == 0)
+                {
+                    continue;
+                }
+
+                if (rng.NextDouble() <= 0.88f)
+                {
+                    laneCursor = (laneCursor + (rng.Next(2) == 0 ? 1 : 2)) % NoteYs.Length;
+                    bool isGood = rng.NextDouble() >= 0.44f;
+                    bool isWheel = beat == 3 && rng.NextDouble() <= 0.38f;
+                    NoteKind kind = isWheel
+                        ? (isGood ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
+                        : (isGood ? NoteKind.GoodTap : NoteKind.BadTap);
+
+                    chart.Add(new NoteSpec(noteTime, kind, laneCursor));
+
+                    int melodyMidi = rootMidi + 12 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
+                    float melodyFrequency = MidiToFrequency(melodyMidi);
+                    if (isWheel)
+                    {
+                        float fromFrequency = isGood ? melodyFrequency * 0.72f : melodyFrequency * 1.3f;
+                        float toFrequency = isGood ? melodyFrequency * 1.34f : melodyFrequency * 0.62f;
+                        AddSweep(samples, noteTime, beatDuration * 1.08f, fromFrequency, toFrequency, isGood ? 0.2f : 0.18f);
+                    }
+                    else
+                    {
+                        AddTone(samples, noteTime, beatDuration * 0.44f, melodyFrequency, isGood ? 0.2f : 0.17f, isGood ? 0 : 1);
+                    }
+                }
+
+                if (beat < BeatsPerBar - 1 && rng.NextDouble() <= 0.22f)
+                {
+                    float extraTime = noteTime + beatDuration * 0.5f;
+                    laneCursor = (laneCursor + 1) % NoteYs.Length;
+                    bool isGood = rng.NextDouble() >= 0.5f;
+                    NoteKind kind = isGood ? NoteKind.GoodTap : NoteKind.BadTap;
+                    chart.Add(new NoteSpec(extraTime, kind, laneCursor));
+
+                    int melodyMidi = rootMidi + 19 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
+                    AddTone(samples, extraTime, beatDuration * 0.28f, MidiToFrequency(melodyMidi), isGood ? 0.16f : 0.14f, isGood ? 0 : 1);
+                }
+            }
+        }
+
+        if (chart.Count == 0)
+        {
+            chart.Add(new NoteSpec(beatDuration, NoteKind.GoodTap, 1));
+        }
+
+        NormalizeSong(samples);
+
+        AudioClip clip = AudioClip.Create(generatedSongLabel, samples.Length, 1, SongSampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    private void PlayGeneratedSong()
+    {
+        if (musicSource == null || generatedSongClip == null)
+        {
+            return;
+        }
+
+        musicSource.Stop();
+        musicSource.clip = generatedSongClip;
+        musicSource.PlayDelayed(MusicLeadIn);
+    }
+
+    private static void AddTone(float[] samples, float startTime, float duration, float frequency, float volume, int waveMode)
+    {
+        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
+        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
+
+        for (int i = start; i < end; i++)
+        {
+            float time = (i - start) / (float)SongSampleRate;
+            float phase = time * frequency * Mathf.PI * 2f;
+            float wave = Mathf.Sin(phase);
+            if (waveMode == 1)
+            {
+                wave = wave * 0.65f + Mathf.Sign(wave) * 0.35f;
+            }
+
+            samples[i] += wave * GetEnvelope(time, duration, 0.012f, 0.08f) * volume;
+        }
+    }
+
+    private static void AddSweep(float[] samples, float startTime, float duration, float fromFrequency, float toFrequency, float volume)
+    {
+        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
+        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
+
+        for (int i = start; i < end; i++)
+        {
+            float time = (i - start) / (float)SongSampleRate;
+            float t = Mathf.Clamp01(time / duration);
+            float frequency = Mathf.Lerp(fromFrequency, toFrequency, t);
+            float wave = Mathf.Sin(time * frequency * Mathf.PI * 2f);
+            samples[i] += wave * GetEnvelope(time, duration, 0.02f, 0.12f) * volume;
+        }
+    }
+
+    private static void AddKick(float[] samples, float startTime, float volume)
+    {
+        float duration = 0.34f;
+        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
+        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
+
+        for (int i = start; i < end; i++)
+        {
+            float time = (i - start) / (float)SongSampleRate;
+            float envelope = Mathf.Exp(-time * 8.5f);
+            float frequency = Mathf.Lerp(42f, 96f, Mathf.Exp(-time * 11f));
+            samples[i] += Mathf.Sin(time * frequency * Mathf.PI * 2f) * envelope * volume;
+        }
+    }
+
+    private static void AddSnare(float[] samples, float startTime, System.Random rng, float volume)
+    {
+        float duration = 0.18f;
+        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
+        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
+
+        for (int i = start; i < end; i++)
+        {
+            float time = (i - start) / (float)SongSampleRate;
+            float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
+            float tone = Mathf.Sin(time * 185f * Mathf.PI * 2f) * 0.35f;
+            samples[i] += (noise * 0.65f + tone) * Mathf.Exp(-time * 18f) * volume;
+        }
+    }
+
+    private static void AddHat(float[] samples, float startTime, System.Random rng, float volume)
+    {
+        float duration = 0.075f;
+        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
+        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
+
+        for (int i = start; i < end; i++)
+        {
+            float time = (i - start) / (float)SongSampleRate;
+            float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
+            samples[i] += noise * Mathf.Exp(-time * 35f) * volume;
+        }
+    }
+
+    private static void NormalizeSong(float[] samples)
+    {
+        float peak = 0f;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            peak = Mathf.Max(peak, Mathf.Abs(samples[i]));
+        }
+
+        if (peak <= 0.01f)
+        {
+            return;
+        }
+
+        float gain = Mathf.Min(0.92f / peak, 1.35f);
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = Mathf.Clamp(samples[i] * gain, -0.98f, 0.98f);
+        }
+    }
+
+    private static float GetEnvelope(float time, float duration, float attack, float release)
+    {
+        float attackGain = attack > 0f ? Mathf.Clamp01(time / attack) : 1f;
+        float releaseGain = release > 0f ? Mathf.Clamp01((duration - time) / release) : 1f;
+        return Mathf.Min(attackGain, releaseGain);
+    }
+
+    private static float MidiToFrequency(int midiNote)
+    {
+        return 440f * Mathf.Pow(2f, (midiNote - 69) / 12f);
     }
 
     private static void CreateBlock(Transform parent, string name, Vector2 position, Vector2 size, Color color, int sortingOrder)
