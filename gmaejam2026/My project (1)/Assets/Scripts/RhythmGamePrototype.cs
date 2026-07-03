@@ -50,6 +50,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public bool Judged;
     }
 
+    private sealed class LocalSongEntry
+    {
+        public string Name;
+        public string FilePath;
+        public AudioClip ResourceClip;
+        public AudioClip LoadedClip;
+    }
+
     [Serializable]
     private sealed class MurekaGenerateRequest
     {
@@ -88,9 +96,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const string MurekaBackendScriptName = "start_mureka_backend.ps1";
     private const float MurekaBackendStartupTimeout = 45f;
     private const string PromptControlName = "MurekaPromptField";
+    private const string MusicResourcesPath = "Music";
     private const string DefaultMurekaPrompt =
         "Bright energetic K-pop rhythm game song, clean strong beat, cute arcade mood, 128 bpm, catchy synth hook, short intro, no long silence";
 
+    private static readonly bool ShowMurekaControls = false;
     private static readonly Color BadColor = new Color(1f, 0.12f, 0.12f, 1f);
     private static readonly Color BadDarkColor = new Color(0.55f, 0.02f, 0.04f, 1f);
     private static readonly Color GoodColor = new Color(0.08f, 0.42f, 1f, 1f);
@@ -116,7 +126,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Transform judgeRing;
     private SpriteRenderer judgeRingRenderer;
     private AudioSource musicSource;
+    private AudioClip currentSongClip;
     private AudioClip generatedSongClip;
+    private readonly List<LocalSongEntry> localSongs = new List<LocalSongEntry>();
+    private Vector2 localSongScroll;
     private float songStartTime;
     private float chartDuration;
     private float generatedBpm = 128f;
@@ -127,9 +140,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private string generatedSongWarning = "";
     private string murekaPrompt = DefaultMurekaPrompt;
     private string murekaStatus = "MUREKA website backend idle. Press START BACKEND or GENERATE.";
+    private int selectedLocalSongIndex = -1;
     private bool isRequestingMurekaSong;
     private bool isStartingMurekaBackend;
+    private bool isLoadingLocalSong;
     private bool isEditingPrompt;
+    private bool songSelectionVisible = true;
     private bool chartFinished;
     private float lastMurekaBackendStartAttempt = -999f;
     private int score;
@@ -164,6 +180,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         SetupCamera();
         SetupStage();
         SetupAudio();
+        LoadLocalSongs();
     }
 
     private void Update()
@@ -179,6 +196,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             Destroy(generatedSongClip);
             generatedSongClip = null;
+        }
+
+        for (int i = 0; i < localSongs.Count; i++)
+        {
+            if (localSongs[i].LoadedClip != null)
+            {
+                Destroy(localSongs[i].LoadedClip);
+                localSongs[i].LoadedClip = null;
+            }
         }
     }
 
@@ -204,12 +230,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawControlCard(new Rect(right + 404f * scale, 16f * scale, 132f * scale, 58f * scale), "WHEEL ^", "GOOD LONG", GoodColor, scale);
         }
 
+        DrawLocalSongSelector(scale);
+
         if (Time.time <= judgementVisibleUntil)
         {
             DrawJudgementImage(scale);
         }
 
-        DrawMurekaControls(scale);
+        if (ShowMurekaControls)
+        {
+            DrawMurekaControls(scale);
+        }
 
         smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.75f);
         GUI.Label(new Rect(18f * scale, Screen.height - 90f * scale, 620f * scale, 28f * scale), murekaStatus, smallStyle);
@@ -268,6 +299,87 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         GUI.enabled = previousEnabled;
+    }
+
+    private void DrawLocalSongSelector(float scale)
+    {
+        float panelX = 18f * scale;
+        float panelY = 108f * scale;
+
+        if (!songSelectionVisible)
+        {
+            if (GUI.Button(new Rect(panelX, panelY, 118f * scale, 30f * scale), "SONGS"))
+            {
+                songSelectionVisible = true;
+            }
+
+            return;
+        }
+
+        float panelWidth = Mathf.Min(390f * scale, Screen.width - 36f * scale);
+        float panelHeight = Mathf.Clamp(Screen.height - panelY - 124f * scale, 132f * scale, 372f * scale);
+        Rect panelRect = new Rect(panelX, panelY, panelWidth, panelHeight);
+        DrawPanel(panelRect, new Color(0.02f, 0.09f, 0.18f, 0.88f));
+
+        GUIStyle selectorTitleStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = Mathf.RoundToInt(15f * scale),
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        selectorTitleStyle.normal.textColor = new Color(0.8f, 0.94f, 1f, 1f);
+
+        GUIStyle songLabelStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = Mathf.RoundToInt(13f * scale),
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft,
+            clipping = TextClipping.Clip
+        };
+        songLabelStyle.normal.textColor = WhiteColor;
+
+        GUI.Label(new Rect(panelX + 14f * scale, panelY + 8f * scale, 190f * scale, 24f * scale), "LOCAL SONGS", selectorTitleStyle);
+        if (GUI.Button(new Rect(panelX + panelWidth - 76f * scale, panelY + 10f * scale, 62f * scale, 24f * scale), "HIDE"))
+        {
+            songSelectionVisible = false;
+        }
+
+        if (localSongs.Count == 0)
+        {
+            GUI.Label(
+                new Rect(panelX + 14f * scale, panelY + 44f * scale, panelWidth - 28f * scale, 64f * scale),
+                "No songs found in Assets/Resources/Music.",
+                songLabelStyle);
+            return;
+        }
+
+        Rect viewRect = new Rect(panelX + 14f * scale, panelY + 42f * scale, panelWidth - 28f * scale, panelHeight - 56f * scale);
+        float rowHeight = 34f * scale;
+        Rect contentRect = new Rect(0f, 0f, viewRect.width - 18f * scale, localSongs.Count * rowHeight);
+        localSongScroll = GUI.BeginScrollView(viewRect, localSongScroll, contentRect, false, true);
+
+        for (int i = 0; i < localSongs.Count; i++)
+        {
+            LocalSongEntry entry = localSongs[i];
+            Rect rowRect = new Rect(0f, i * rowHeight, contentRect.width, rowHeight - 4f * scale);
+            bool selected = i == selectedLocalSongIndex;
+            DrawRect(rowRect, selected ? new Color(0.08f, 0.42f, 1f, 0.72f) : new Color(0f, 0f, 0f, 0.24f));
+
+            string songName = entry == null || string.IsNullOrWhiteSpace(entry.Name) ? "Missing Song" : entry.Name;
+            GUI.Label(new Rect(rowRect.x + 8f * scale, rowRect.y, rowRect.width - 86f * scale, rowRect.height), songName, songLabelStyle);
+
+            string buttonText = selected && musicSource != null && musicSource.isPlaying ? "PLAYING" : "PLAY";
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = !isLoadingLocalSong;
+            if (GUI.Button(new Rect(rowRect.x + rowRect.width - 74f * scale, rowRect.y + 3f * scale, 68f * scale, rowRect.height - 6f * scale), buttonText))
+            {
+                PlayLocalSong(i);
+            }
+
+            GUI.enabled = previousEnabled;
+        }
+
+        GUI.EndScrollView();
     }
 
     private void ReadInput()
@@ -474,7 +586,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (allJudged && !chartFinished && now > songStartTime + chartDuration + 1.1f)
         {
             chartFinished = true;
-            murekaStatus = "Song finished. Edit the prompt, then press GENERATE.";
+            murekaStatus = "Song finished. Open SONGS to replay or choose another track.";
         }
     }
 
@@ -535,7 +647,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         notes.Clear();
         if (chart.Count == 0)
         {
-            murekaStatus = isRequestingMurekaSong ? murekaStatus : "No MUREKA chart ready. Press GENERATE.";
+            murekaStatus = isRequestingMurekaSong ? murekaStatus : "Select a local song to play.";
             return;
         }
 
@@ -549,7 +661,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             CreateNote(spec.Kind, spec.LaneIndex, songStartTime + spec.Time);
         }
 
-        PlayGeneratedSong();
+        PlayCurrentSong();
         judgementKind = JudgementKind.None;
         judgementVisibleUntil = 0f;
     }
@@ -737,6 +849,153 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         musicSource.volume = 0.72f;
     }
 
+    private void LoadLocalSongs()
+    {
+        localSongs.Clear();
+
+        AudioClip[] resourceClips = Resources.LoadAll<AudioClip>(MusicResourcesPath);
+        for (int i = 0; i < resourceClips.Length; i++)
+        {
+            AudioClip clip = resourceClips[i];
+            if (clip != null)
+            {
+                AddLocalSong(clip.name, string.Empty, clip);
+            }
+        }
+
+        string musicFolder = Path.Combine(Application.dataPath, "Resources", MusicResourcesPath);
+        if (Directory.Exists(musicFolder))
+        {
+            string[] musicFiles = Directory.GetFiles(musicFolder, "*.mp3", SearchOption.TopDirectoryOnly);
+            for (int i = 0; i < musicFiles.Length; i++)
+            {
+                string filePath = musicFiles[i];
+                AddLocalSong(Path.GetFileNameWithoutExtension(filePath), filePath, null);
+            }
+        }
+
+        localSongs.Sort((left, right) =>
+            string.Compare(
+                left == null ? string.Empty : left.Name,
+                right == null ? string.Empty : right.Name,
+                StringComparison.CurrentCultureIgnoreCase));
+
+        selectedLocalSongIndex = -1;
+        generatedSongLabel = localSongs.Count > 0 ? "SELECT SONG" : "NO LOCAL SONG";
+        generatedSongProvider = "LOCAL";
+        generatedSongWarning = string.Empty;
+        murekaStatus = localSongs.Count > 0
+            ? "Select a local song to play."
+            : "No local songs found. Add MP3 files to Assets/Resources/Music.";
+    }
+
+    private void PlayLocalSong(int index)
+    {
+        if (isLoadingLocalSong)
+        {
+            return;
+        }
+
+        if (index < 0 || index >= localSongs.Count || localSongs[index] == null)
+        {
+            murekaStatus = "Selected local song could not be loaded.";
+            return;
+        }
+
+        StartCoroutine(PlayLocalSongRoutine(index));
+    }
+
+    private IEnumerator PlayLocalSongRoutine(int index)
+    {
+        isLoadingLocalSong = true;
+        LocalSongEntry song = localSongs[index];
+        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+
+        if (clip == null)
+        {
+            if (string.IsNullOrWhiteSpace(song.FilePath) || !File.Exists(song.FilePath))
+            {
+                murekaStatus = "Local song file was not found: " + song.Name;
+                isLoadingLocalSong = false;
+                yield break;
+            }
+
+            murekaStatus = "Loading local song: " + song.Name;
+            using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(new Uri(song.FilePath).AbsoluteUri, AudioType.MPEG))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    murekaStatus = "Local song load failed: " + request.error;
+                    isLoadingLocalSong = false;
+                    yield break;
+                }
+
+                clip = DownloadHandlerAudioClip.GetContent(request);
+                if (clip == null)
+                {
+                    murekaStatus = "Local song could not be decoded by Unity.";
+                    isLoadingLocalSong = false;
+                    yield break;
+                }
+
+                clip.name = song.Name;
+                song.LoadedClip = clip;
+            }
+        }
+
+        ClearCurrentSong();
+
+        currentSongClip = clip;
+        selectedLocalSongIndex = index;
+        generatedSongSeed = CreateStableSeed(song.Name);
+        generatedSongLabel = song.Name;
+        generatedSongProvider = "LOCAL";
+        generatedSongWarning = string.Empty;
+        generatedBpm = 128f;
+        generatedSongLength = Mathf.Max(4f, clip.length);
+
+        BuildChartForMurekaSong(new System.Random(generatedSongSeed));
+        RestartChart();
+        songSelectionVisible = false;
+        isLoadingLocalSong = false;
+        murekaStatus = "Playing local song: " + song.Name;
+    }
+
+    private void AddLocalSong(string songName, string filePath, AudioClip resourceClip)
+    {
+        if (string.IsNullOrWhiteSpace(songName))
+        {
+            return;
+        }
+
+        for (int i = 0; i < localSongs.Count; i++)
+        {
+            if (string.Equals(localSongs[i].Name, songName, StringComparison.CurrentCultureIgnoreCase))
+            {
+                if (localSongs[i].ResourceClip == null && resourceClip != null)
+                {
+                    localSongs[i].ResourceClip = resourceClip;
+                }
+
+                if (string.IsNullOrWhiteSpace(localSongs[i].FilePath) && !string.IsNullOrWhiteSpace(filePath))
+                {
+                    localSongs[i].FilePath = filePath;
+                }
+
+                return;
+            }
+        }
+
+        localSongs.Add(new LocalSongEntry
+        {
+            Name = songName,
+            FilePath = filePath,
+            ResourceClip = resourceClip
+        });
+    }
+
     private void GenerateNewSong()
     {
         if (isRequestingMurekaSong)
@@ -853,6 +1112,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             musicSource.Stop();
             musicSource.clip = null;
         }
+
+        currentSongClip = null;
+        selectedLocalSongIndex = -1;
 
         if (generatedSongClip != null)
         {
@@ -987,6 +1249,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             generatedSongClip.name = generatedSongLabel;
         }
 
+        currentSongClip = generatedSongClip;
         generatedSongLength = Mathf.Max(4f, generatedSongClip.length);
         BuildChartForMurekaSong(new System.Random(generatedSongSeed));
         RestartChart();
@@ -1002,6 +1265,20 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (path.EndsWith(".ogg")) return AudioType.OGGVORBIS;
         if (path.EndsWith(".wav")) return AudioType.WAV;
         return AudioType.MPEG;
+    }
+
+    private static int CreateStableSeed(string value)
+    {
+        unchecked
+        {
+            int hash = 17;
+            for (int i = 0; i < value.Length; i++)
+            {
+                hash = hash * 31 + value[i];
+            }
+
+            return hash == int.MinValue ? int.MaxValue : Mathf.Abs(hash);
+        }
     }
 
     private void BuildChartForMurekaSong(System.Random rng)
@@ -1071,15 +1348,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         return IsWheelNote(kind) ? MinLongNoteGap : MinTapNoteGap;
     }
 
-    private void PlayGeneratedSong()
+    private void PlayCurrentSong()
     {
-        if (musicSource == null || generatedSongClip == null)
+        if (musicSource == null || currentSongClip == null)
         {
             return;
         }
 
         musicSource.Stop();
-        musicSource.clip = generatedSongClip;
+        musicSource.clip = currentSongClip;
         musicSource.PlayDelayed(MusicLeadIn);
     }
 
