@@ -45,6 +45,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float MissWindow = 0.42f;
     private const float AutoFollowLookAhead = 1.85f;
     private const float AutoFollowSpeed = 12f;
+    private const float MinTapNoteGap = 0.38f;
+    private const float MinLongNoteGap = 0.95f;
     private const float MusicLeadIn = 2.1f;
     private const int SongSampleRate = 44100;
     private const int SongBars = 8;
@@ -447,7 +449,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void CreateNote(NoteKind kind, int laneIndex, float hitTime)
     {
-        float laneY = GetLaneY(laneIndex);
+        float laneY = GetNoteY(kind, laneIndex);
         GameObject root = new GameObject(kind.ToString());
         root.transform.SetParent(notesRoot, false);
         root.transform.position = new Vector3(SpawnX, laneY, 0f);
@@ -483,18 +485,34 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         return NoteYs[clampedIndex];
     }
 
+    private static float GetNoteY(NoteKind kind, int laneIndex)
+    {
+        if (kind == NoteKind.GoodWheelUp)
+        {
+            return NoteYs[0];
+        }
+
+        if (kind == NoteKind.BadWheelDown)
+        {
+            return NoteYs[NoteYs.Length - 1];
+        }
+
+        return GetLaneY(laneIndex);
+    }
+
     private void CreateLongBody(Transform root, NoteKind kind)
     {
         bool bad = kind == NoteKind.BadWheelDown;
-        Vector2 direction = bad ? new Vector2(0.78f, -0.62f).normalized : new Vector2(0.66f, 0.75f).normalized;
-        float length = 2.65f;
+        Vector2 direction = bad ? new Vector2(0.72f, -0.72f).normalized : new Vector2(0.72f, 0.72f).normalized;
+        float length = 3.05f;
         Color bodyColor = bad ? BadColor : GoodColor;
         Color darkColor = bad ? BadDarkColor : GoodDarkColor;
         float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
 
-        CreateLine(root, "Long Outline", direction, length, 0.78f, WhiteColor, 5);
-        CreateLine(root, "Long Shadow", direction, length, 0.58f, darkColor, 6);
-        CreateLine(root, "Long Fill", direction, length, 0.48f, bodyColor, 7);
+        CreateLine(root, "Long Glow", direction, length, 1.05f, new Color(bodyColor.r, bodyColor.g, bodyColor.b, 0.24f), 4);
+        CreateLine(root, "Long Outline", direction, length, 0.82f, WhiteColor, 5);
+        CreateLine(root, "Long Shadow", direction, length, 0.62f, darkColor, 6);
+        CreateLine(root, "Long Fill", direction, length, 0.50f, bodyColor, 7);
 
         GameObject tail = new GameObject("Tail Cap");
         tail.transform.SetParent(root, false);
@@ -697,19 +715,20 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                         ? (isGood ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
                         : (isGood ? NoteKind.GoodTap : NoteKind.BadTap);
 
-                    chart.Add(new NoteSpec(noteTime, kind, laneCursor));
-
-                    int melodyMidi = rootMidi + 12 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
-                    float melodyFrequency = MidiToFrequency(melodyMidi);
-                    if (isWheel)
+                    if (TryAddGeneratedNote(noteTime, kind, laneCursor))
                     {
-                        float fromFrequency = isGood ? melodyFrequency * 0.72f : melodyFrequency * 1.3f;
-                        float toFrequency = isGood ? melodyFrequency * 1.34f : melodyFrequency * 0.62f;
-                        AddSweep(samples, noteTime, beatDuration * 1.08f, fromFrequency, toFrequency, isGood ? 0.2f : 0.18f);
-                    }
-                    else
-                    {
-                        AddTone(samples, noteTime, beatDuration * 0.44f, melodyFrequency, isGood ? 0.2f : 0.17f, isGood ? 0 : 1);
+                        int melodyMidi = rootMidi + 12 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
+                        float melodyFrequency = MidiToFrequency(melodyMidi);
+                        if (isWheel)
+                        {
+                            float fromFrequency = isGood ? melodyFrequency * 0.72f : melodyFrequency * 1.3f;
+                            float toFrequency = isGood ? melodyFrequency * 1.34f : melodyFrequency * 0.62f;
+                            AddSweep(samples, noteTime, beatDuration * 1.08f, fromFrequency, toFrequency, isGood ? 0.2f : 0.18f);
+                        }
+                        else
+                        {
+                            AddTone(samples, noteTime, beatDuration * 0.44f, melodyFrequency, isGood ? 0.2f : 0.17f, isGood ? 0 : 1);
+                        }
                     }
                 }
 
@@ -719,10 +738,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     laneCursor = (laneCursor + 1) % NoteYs.Length;
                     bool isGood = rng.NextDouble() >= 0.5f;
                     NoteKind kind = isGood ? NoteKind.GoodTap : NoteKind.BadTap;
-                    chart.Add(new NoteSpec(extraTime, kind, laneCursor));
-
-                    int melodyMidi = rootMidi + 19 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
-                    AddTone(samples, extraTime, beatDuration * 0.28f, MidiToFrequency(melodyMidi), isGood ? 0.16f : 0.14f, isGood ? 0 : 1);
+                    if (TryAddGeneratedNote(extraTime, kind, laneCursor))
+                    {
+                        int melodyMidi = rootMidi + 19 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
+                        AddTone(samples, extraTime, beatDuration * 0.28f, MidiToFrequency(melodyMidi), isGood ? 0.16f : 0.14f, isGood ? 0 : 1);
+                    }
                 }
             }
         }
@@ -737,6 +757,27 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         AudioClip clip = AudioClip.Create(generatedSongLabel, samples.Length, 1, SongSampleRate, false);
         clip.SetData(samples, 0);
         return clip;
+    }
+
+    private bool TryAddGeneratedNote(float noteTime, NoteKind kind, int laneIndex)
+    {
+        if (chart.Count > 0)
+        {
+            NoteSpec previous = chart[chart.Count - 1];
+            float requiredGap = Mathf.Max(GetGeneratedNoteGap(previous.Kind), GetGeneratedNoteGap(kind));
+            if (noteTime - previous.Time < requiredGap)
+            {
+                return false;
+            }
+        }
+
+        chart.Add(new NoteSpec(noteTime, kind, laneIndex));
+        return true;
+    }
+
+    private static float GetGeneratedNoteGap(NoteKind kind)
+    {
+        return IsWheelNote(kind) ? MinLongNoteGap : MinTapNoteGap;
     }
 
     private void PlayGeneratedSong()
