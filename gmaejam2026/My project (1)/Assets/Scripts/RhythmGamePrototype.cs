@@ -1,6 +1,11 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Networking;
 
 [DefaultExecutionOrder(-100)]
 public sealed class RhythmGamePrototype : MonoBehaviour
@@ -45,6 +50,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public bool Judged;
     }
 
+    [Serializable]
+    private sealed class MurekaGenerateRequest
+    {
+        public string prompt;
+        public string provider;
+    }
+
+    [Serializable]
+    private sealed class MurekaGenerateResponse
+    {
+        public string trackId;
+        public string title;
+        public string style;
+        public float bpm;
+        public string audioUrl;
+        public string provider;
+        public string warning;
+    }
+
     private const float LaneY = -2.55f;
     private const float HitX = -5.75f;
     private const float SpawnX = 8.75f;
@@ -57,9 +81,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float MinTapNoteGap = 0.38f;
     private const float MinLongNoteGap = 0.95f;
     private const float MusicLeadIn = 2.1f;
-    private const int SongSampleRate = 44100;
-    private const int SongBars = 8;
     private const int BeatsPerBar = 4;
+    private const string MurekaBackendUrl = "http://127.0.0.1:8067";
+    private const string MurekaProvider = "mureka_web_automation_imported";
+    private const string MurekaBackendFolderName = "MurekaBackend";
+    private const string MurekaBackendScriptName = "start_mureka_backend.ps1";
+    private const float MurekaBackendStartupTimeout = 45f;
+    private const string PromptControlName = "MurekaPromptField";
+    private const string DefaultMurekaPrompt =
+        "Bright energetic K-pop rhythm game song, clean strong beat, cute arcade mood, 128 bpm, catchy synth hook, short intro, no long silence";
 
     private static readonly Color BadColor = new Color(1f, 0.12f, 0.12f, 1f);
     private static readonly Color BadDarkColor = new Color(0.55f, 0.02f, 0.04f, 1f);
@@ -92,7 +122,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private float generatedBpm = 128f;
     private float generatedSongLength = 14f;
     private int generatedSongSeed;
-    private string generatedSongLabel = "AI SONG";
+    private string generatedSongLabel = "MUREKA SONG";
+    private string generatedSongProvider = "MUREKA";
+    private string generatedSongWarning = "";
+    private string murekaPrompt = DefaultMurekaPrompt;
+    private string murekaStatus = "MUREKA website backend idle. Press START BACKEND or GENERATE.";
+    private bool isRequestingMurekaSong;
+    private bool isStartingMurekaBackend;
+    private bool isEditingPrompt;
+    private bool chartFinished;
+    private float lastMurekaBackendStartAttempt = -999f;
     private int score;
     private int combo;
     private int bestCombo;
@@ -125,8 +164,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         SetupCamera();
         SetupStage();
         SetupAudio();
-        GenerateNewSong();
-        RestartChart();
     }
 
     private void Update()
@@ -172,13 +209,74 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawJudgementImage(scale);
         }
 
+        DrawMurekaControls(scale);
+
         smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.75f);
-        GUI.Label(new Rect(18f * scale, Screen.height - 64f * scale, 360f * scale, 28f * scale), generatedSongLabel + "  " + Mathf.RoundToInt(generatedBpm) + " BPM", smallStyle);
+        GUI.Label(new Rect(18f * scale, Screen.height - 90f * scale, 620f * scale, 28f * scale), murekaStatus, smallStyle);
+        GUI.Label(new Rect(18f * scale, Screen.height - 64f * scale, 520f * scale, 28f * scale), generatedSongLabel + "  " + Mathf.RoundToInt(generatedBpm) + " BPM  " + generatedSongProvider, smallStyle);
         GUI.Label(new Rect(18f * scale, Screen.height - 38f * scale, 250f * scale, 28f * scale), "BEST " + bestCombo + "x", smallStyle);
+    }
+
+    private void DrawMurekaControls(float scale)
+    {
+        float panelWidth = Mathf.Min(520f * scale, Screen.width - 36f * scale);
+        float panelHeight = 124f * scale;
+        float panelX = Mathf.Max(18f * scale, Screen.width - panelWidth - 18f * scale);
+        float panelY = 104f * scale;
+        Rect panelRect = new Rect(panelX, panelY, panelWidth, panelHeight);
+
+        DrawPanel(panelRect, new Color(0.02f, 0.09f, 0.18f, 0.88f));
+
+        GUIStyle promptTitleStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = Mathf.RoundToInt(14f * scale),
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        promptTitleStyle.normal.textColor = new Color(0.8f, 0.94f, 1f, 1f);
+
+        GUIStyle promptTextStyle = new GUIStyle(GUI.skin.textArea)
+        {
+            fontSize = Mathf.RoundToInt(13f * scale),
+            wordWrap = true
+        };
+
+        GUI.Label(new Rect(panelX + 14f * scale, panelY + 8f * scale, 220f * scale, 22f * scale), "MUREKA PROMPT", promptTitleStyle);
+
+        GUI.SetNextControlName(PromptControlName);
+        murekaPrompt = GUI.TextArea(
+            new Rect(panelX + 14f * scale, panelY + 34f * scale, panelWidth - 28f * scale, 48f * scale),
+            murekaPrompt,
+            240,
+            promptTextStyle);
+        isEditingPrompt = GUI.GetNameOfFocusedControl() == PromptControlName;
+
+        bool previousEnabled = GUI.enabled;
+        GUI.enabled = !isRequestingMurekaSong && !isStartingMurekaBackend;
+        if (GUI.Button(new Rect(panelX + 14f * scale, panelY + 88f * scale, 154f * scale, 26f * scale), "START BACKEND"))
+        {
+            GUI.FocusControl(string.Empty);
+            isEditingPrompt = false;
+            StartMurekaBackendOnly();
+        }
+
+        if (GUI.Button(new Rect(panelX + 178f * scale, panelY + 88f * scale, 154f * scale, 26f * scale), "GENERATE"))
+        {
+            GUI.FocusControl(string.Empty);
+            isEditingPrompt = false;
+            GenerateNewSong();
+        }
+
+        GUI.enabled = previousEnabled;
     }
 
     private void ReadInput()
     {
+        if (isEditingPrompt)
+        {
+            return;
+        }
+
         Keyboard keyboard = Keyboard.current;
         if (keyboard != null)
         {
@@ -190,12 +288,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             if (keyboard.eKey.wasPressedThisFrame)
             {
                 TryHit(NoteKind.BadTap);
-            }
-
-            if (keyboard.rKey.wasPressedThisFrame)
-            {
-                GenerateNewSong();
-                RestartChart();
             }
         }
 
@@ -344,6 +436,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void UpdateNotes()
     {
+        if (notes.Count == 0)
+        {
+            return;
+        }
+
         bool allJudged = true;
         float now = Time.time;
 
@@ -374,10 +471,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
         }
 
-        if (allJudged && now > songStartTime + chartDuration + 1.1f)
+        if (allJudged && !chartFinished && now > songStartTime + chartDuration + 1.1f)
         {
-            GenerateNewSong();
-            RestartChart();
+            chartFinished = true;
+            murekaStatus = "Song finished. Edit the prompt, then press GENERATE.";
         }
     }
 
@@ -438,11 +535,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         notes.Clear();
         if (chart.Count == 0)
         {
-            GenerateNewSong();
+            murekaStatus = isRequestingMurekaSong ? murekaStatus : "No MUREKA chart ready. Press GENERATE.";
+            return;
         }
 
         songStartTime = Time.time + MusicLeadIn;
         chartDuration = Mathf.Max(generatedSongLength, chart[chart.Count - 1].Time);
+        chartFinished = false;
 
         for (int i = 0; i < chart.Count; i++)
         {
@@ -640,9 +739,119 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void GenerateNewSong()
     {
+        if (isRequestingMurekaSong)
+        {
+            murekaStatus = "MUREKA request is already running.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(GetCurrentMurekaPrompt()))
+        {
+            murekaStatus = "Write a MUREKA prompt first.";
+            return;
+        }
+
+        StartCoroutine(RequestMurekaSong());
+    }
+
+    private void StartMurekaBackendOnly()
+    {
+        if (isStartingMurekaBackend || isRequestingMurekaSong)
+        {
+            return;
+        }
+
+        StartCoroutine(StartMurekaBackendRoutine());
+    }
+
+    private IEnumerator StartMurekaBackendRoutine()
+    {
+        isStartingMurekaBackend = true;
+        murekaStatus = "Starting project MUREKA backend...";
+        bool backendReady = false;
+        yield return EnsureMurekaBackendReady(value => backendReady = value);
+        murekaStatus = backendReady
+            ? "MUREKA website backend ready."
+            : "Project backend did not start. Check My project (1)/MurekaBackend/start_mureka_backend.ps1.";
+        isStartingMurekaBackend = false;
+    }
+
+    private IEnumerator RequestMurekaSong()
+    {
+        isRequestingMurekaSong = true;
+        ClearCurrentSong();
+        string prompt = GetCurrentMurekaPrompt();
+
+        generatedSongSeed = UnityEngine.Random.Range(10000, 999999);
+        generatedSongLabel = "MUREKA GENERATING";
+        generatedSongProvider = MurekaProvider;
+        generatedSongWarning = "";
+        generatedBpm = 128f;
+        murekaStatus = "Checking MUREKA website backend...";
+
+        bool backendReady = false;
+        yield return EnsureMurekaBackendReady(value => backendReady = value);
+        if (!backendReady)
+        {
+            murekaStatus = "Project backend is not ready. Press START BACKEND, then GENERATE.";
+            isRequestingMurekaSong = false;
+            yield break;
+        }
+
+        murekaStatus = "Creating song on the MUREKA website...";
+        var requestBody = JsonUtility.ToJson(new MurekaGenerateRequest
+        {
+            prompt = prompt,
+            provider = MurekaProvider
+        });
+
+        using (UnityWebRequest request = new UnityWebRequest(MurekaBackendUrl + "/generate", "POST"))
+        {
+            byte[] body = Encoding.UTF8.GetBytes(requestBody);
+            request.uploadHandler = new UploadHandlerRaw(body);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.timeout = 900;
+
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                string backendMessage = request.downloadHandler == null ? "" : request.downloadHandler.text;
+                murekaStatus = string.IsNullOrWhiteSpace(backendMessage)
+                    ? "MUREKA generation failed: " + request.error
+                    : "MUREKA generation failed: " + backendMessage;
+                isRequestingMurekaSong = false;
+                yield break;
+            }
+
+            MurekaGenerateResponse response = JsonUtility.FromJson<MurekaGenerateResponse>(request.downloadHandler.text);
+            if (response == null || string.IsNullOrWhiteSpace(response.audioUrl))
+            {
+                murekaStatus = "MUREKA response did not include an audio URL.";
+                isRequestingMurekaSong = false;
+                yield break;
+            }
+
+            generatedSongLabel = string.IsNullOrWhiteSpace(response.title)
+                ? "MUREKA SONG " + (generatedSongSeed % 1000).ToString("000")
+                : response.title;
+            generatedSongProvider = string.IsNullOrWhiteSpace(response.provider) ? MurekaProvider : response.provider;
+            generatedSongWarning = response.warning;
+            generatedBpm = response.bpm > 1f ? Mathf.Clamp(response.bpm, 80f, 180f) : 128f;
+
+            yield return DownloadMurekaAudio(response.audioUrl);
+        }
+
+        isRequestingMurekaSong = false;
+    }
+
+    private void ClearCurrentSong()
+    {
         if (musicSource != null)
         {
             musicSource.Stop();
+            musicSource.clip = null;
         }
 
         if (generatedSongClip != null)
@@ -651,120 +860,194 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             generatedSongClip = null;
         }
 
-        generatedSongSeed = UnityEngine.Random.Range(10000, 999999);
-        var rng = new System.Random(generatedSongSeed);
-        int[] bpmChoices = { 116, 124, 132, 140 };
-        string[] songNames = { "AI POP", "AI DASH", "AI SKY", "AI SPARK" };
+        for (int i = 0; i < notes.Count; i++)
+        {
+            ClearNote(notes[i]);
+        }
 
-        generatedBpm = bpmChoices[rng.Next(bpmChoices.Length)];
-        generatedSongLabel = songNames[rng.Next(songNames.Length)] + " " + (generatedSongSeed % 1000).ToString("000");
-        generatedSongClip = BuildProceduralSong(rng);
+        notes.Clear();
+        chart.Clear();
+        chartDuration = 0f;
+        chartFinished = false;
+        judgementKind = JudgementKind.None;
+        judgementVisibleUntil = 0f;
     }
 
-    private AudioClip BuildProceduralSong(System.Random rng)
+    private string GetCurrentMurekaPrompt()
+    {
+        string prompt = string.IsNullOrWhiteSpace(murekaPrompt) ? DefaultMurekaPrompt : murekaPrompt;
+        return prompt.Trim();
+    }
+
+    private IEnumerator EnsureMurekaBackendReady(Action<bool> onDone)
+    {
+        bool ready = false;
+        yield return CheckMurekaBackendHealth(value => ready = value);
+        if (ready)
+        {
+            onDone(true);
+            yield break;
+        }
+
+        if (!LaunchMurekaBackend())
+        {
+            onDone(false);
+            yield break;
+        }
+
+        murekaStatus = "Starting MUREKA website backend...";
+        float deadline = Time.realtimeSinceStartup + MurekaBackendStartupTimeout;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            yield return new WaitForSeconds(2f);
+            yield return CheckMurekaBackendHealth(value => ready = value);
+            if (ready)
+            {
+                onDone(true);
+                yield break;
+            }
+        }
+
+        onDone(false);
+    }
+
+    private IEnumerator CheckMurekaBackendHealth(Action<bool> onDone)
+    {
+        using (UnityWebRequest request = UnityWebRequest.Get(MurekaBackendUrl + "/health"))
+        {
+            request.timeout = 2;
+            yield return request.SendWebRequest();
+            onDone(request.result == UnityWebRequest.Result.Success);
+        }
+    }
+
+    private bool LaunchMurekaBackend()
+    {
+        if (Time.realtimeSinceStartup - lastMurekaBackendStartAttempt < 10f)
+        {
+            return true;
+        }
+
+        lastMurekaBackendStartAttempt = Time.realtimeSinceStartup;
+
+        try
+        {
+            string scriptPath = GetMurekaBackendScriptPath();
+            if (!File.Exists(scriptPath))
+            {
+                murekaStatus = "Project backend script was not found: " + scriptPath;
+                return false;
+            }
+
+            var startInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\"",
+                WorkingDirectory = Path.GetDirectoryName(scriptPath),
+                UseShellExecute = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Minimized
+            };
+            System.Diagnostics.Process.Start(startInfo);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            murekaStatus = "Failed to start MUREKA bridge: " + ex.Message;
+            return false;
+        }
+    }
+
+    private static string GetMurekaBackendScriptPath()
+    {
+        string projectRoot = Path.GetDirectoryName(Application.dataPath);
+        return Path.Combine(projectRoot, MurekaBackendFolderName, MurekaBackendScriptName);
+    }
+
+    private IEnumerator DownloadMurekaAudio(string audioUrl)
+    {
+        murekaStatus = "Downloading MUREKA audio...";
+        using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(audioUrl, GuessAudioType(audioUrl)))
+        {
+            request.timeout = 90;
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                murekaStatus = "MUREKA audio download failed: " + request.error;
+                yield break;
+            }
+
+            generatedSongClip = DownloadHandlerAudioClip.GetContent(request);
+            if (generatedSongClip == null)
+            {
+                murekaStatus = "MUREKA audio could not be decoded by Unity.";
+                yield break;
+            }
+
+            generatedSongClip.name = generatedSongLabel;
+        }
+
+        generatedSongLength = Mathf.Max(4f, generatedSongClip.length);
+        BuildChartForMurekaSong(new System.Random(generatedSongSeed));
+        RestartChart();
+        murekaStatus = string.IsNullOrWhiteSpace(generatedSongWarning)
+            ? "MUREKA song ready."
+            : "MUREKA song ready. " + generatedSongWarning;
+    }
+
+    private static AudioType GuessAudioType(string url)
+    {
+        string path = url.Split('?')[0].ToLowerInvariant();
+        if (path.EndsWith(".mp3")) return AudioType.MPEG;
+        if (path.EndsWith(".ogg")) return AudioType.OGGVORBIS;
+        if (path.EndsWith(".wav")) return AudioType.WAV;
+        return AudioType.MPEG;
+    }
+
+    private void BuildChartForMurekaSong(System.Random rng)
     {
         chart.Clear();
 
-        float beatDuration = 60f / generatedBpm;
-        generatedSongLength = SongBars * BeatsPerBar * beatDuration;
-        int sampleCount = Mathf.CeilToInt((generatedSongLength + 1.2f) * SongSampleRate);
-        float[] samples = new float[sampleCount];
-
-        int[] rootOptions = { 55, 57, 60, 62, 64 };
-        int[] melodyOffsets = { 0, 2, 4, 7, 9, 12, 14, 16 };
-        int[][] progressions =
-        {
-            new[] { 0, 7, 9, 5 },
-            new[] { 0, 5, 7, 0 },
-            new[] { 0, 9, 5, 7 },
-        };
-
-        int rootMidi = rootOptions[rng.Next(rootOptions.Length)];
-        int[] progression = progressions[rng.Next(progressions.Length)];
+        float bpm = Mathf.Clamp(generatedBpm, 80f, 180f);
+        float beatDuration = 60f / bpm;
+        float firstNoteTime = Mathf.Max(1.1f, beatDuration * 2f);
+        float finalNoteTime = Mathf.Max(firstNoteTime, generatedSongLength - 1.25f);
         int laneCursor = 1;
+        int beatIndex = 0;
 
-        for (int bar = 0; bar < SongBars; bar++)
+        for (float noteTime = firstNoteTime; noteTime <= finalNoteTime; noteTime += beatDuration)
         {
-            float barStart = bar * BeatsPerBar * beatDuration;
-            int chordOffset = progression[bar % progression.Length];
+            int beatInBar = beatIndex % BeatsPerBar;
+            bool strongBeat = beatInBar == 0 || beatInBar == 2;
+            double noteChance = strongBeat ? 0.95 : 0.76;
 
-            AddTone(samples, barStart, beatDuration * 3.85f, MidiToFrequency(rootMidi + chordOffset - 12), 0.055f, 0);
-            AddTone(samples, barStart, beatDuration * 3.85f, MidiToFrequency(rootMidi + chordOffset), 0.035f, 0);
-            AddTone(samples, barStart, beatDuration * 3.85f, MidiToFrequency(rootMidi + chordOffset + 7), 0.03f, 0);
-
-            for (int beat = 0; beat < BeatsPerBar; beat++)
+            if (rng.NextDouble() <= noteChance)
             {
-                float noteTime = barStart + beat * beatDuration;
+                laneCursor = (laneCursor + (rng.Next(2) == 0 ? 1 : 2)) % NoteYs.Length;
+                bool isGood = rng.NextDouble() >= 0.45;
+                bool isWheel = beatInBar == 3 && rng.NextDouble() <= 0.34;
+                NoteKind kind = isWheel
+                    ? (isGood ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
+                    : (isGood ? NoteKind.GoodTap : NoteKind.BadTap);
 
-                if (beat == 0 || beat == 2)
-                {
-                    AddKick(samples, noteTime, 0.55f);
-                    AddTone(samples, noteTime, beatDuration * 0.42f, MidiToFrequency(rootMidi + chordOffset - 24), 0.11f, 1);
-                }
-                else
-                {
-                    AddSnare(samples, noteTime, rng, 0.28f);
-                }
-
-                AddHat(samples, noteTime, rng, 0.12f);
-                AddHat(samples, noteTime + beatDuration * 0.5f, rng, 0.08f);
-
-                if (bar == 0 && beat == 0)
-                {
-                    continue;
-                }
-
-                if (rng.NextDouble() <= 0.88f)
-                {
-                    laneCursor = (laneCursor + (rng.Next(2) == 0 ? 1 : 2)) % NoteYs.Length;
-                    bool isGood = rng.NextDouble() >= 0.44f;
-                    bool isWheel = beat == 3 && rng.NextDouble() <= 0.38f;
-                    NoteKind kind = isWheel
-                        ? (isGood ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
-                        : (isGood ? NoteKind.GoodTap : NoteKind.BadTap);
-
-                    if (TryAddGeneratedNote(noteTime, kind, laneCursor))
-                    {
-                        int melodyMidi = rootMidi + 12 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
-                        float melodyFrequency = MidiToFrequency(melodyMidi);
-                        if (isWheel)
-                        {
-                            float fromFrequency = isGood ? melodyFrequency * 0.72f : melodyFrequency * 1.3f;
-                            float toFrequency = isGood ? melodyFrequency * 1.34f : melodyFrequency * 0.62f;
-                            AddSweep(samples, noteTime, beatDuration * 1.08f, fromFrequency, toFrequency, isGood ? 0.2f : 0.18f);
-                        }
-                        else
-                        {
-                            AddTone(samples, noteTime, beatDuration * 0.44f, melodyFrequency, isGood ? 0.2f : 0.17f, isGood ? 0 : 1);
-                        }
-                    }
-                }
-
-                if (beat < BeatsPerBar - 1 && rng.NextDouble() <= 0.22f)
-                {
-                    float extraTime = noteTime + beatDuration * 0.5f;
-                    laneCursor = (laneCursor + 1) % NoteYs.Length;
-                    bool isGood = rng.NextDouble() >= 0.5f;
-                    NoteKind kind = isGood ? NoteKind.GoodTap : NoteKind.BadTap;
-                    if (TryAddGeneratedNote(extraTime, kind, laneCursor))
-                    {
-                        int melodyMidi = rootMidi + 19 + chordOffset + melodyOffsets[rng.Next(melodyOffsets.Length)];
-                        AddTone(samples, extraTime, beatDuration * 0.28f, MidiToFrequency(melodyMidi), isGood ? 0.16f : 0.14f, isGood ? 0 : 1);
-                    }
-                }
+                TryAddGeneratedNote(noteTime, kind, laneCursor);
             }
+
+            if (beatInBar < BeatsPerBar - 1 && rng.NextDouble() <= 0.18)
+            {
+                float extraTime = noteTime + beatDuration * 0.5f;
+                laneCursor = (laneCursor + 1) % NoteYs.Length;
+                bool isGood = rng.NextDouble() >= 0.5;
+                TryAddGeneratedNote(extraTime, isGood ? NoteKind.GoodTap : NoteKind.BadTap, laneCursor);
+            }
+
+            beatIndex++;
         }
 
         if (chart.Count == 0)
         {
-            chart.Add(new NoteSpec(beatDuration, NoteKind.GoodTap, 1));
+            chart.Add(new NoteSpec(firstNoteTime, NoteKind.GoodTap, 1));
         }
-
-        NormalizeSong(samples);
-
-        AudioClip clip = AudioClip.Create(generatedSongLabel, samples.Length, 1, SongSampleRate, false);
-        clip.SetData(samples, 0);
-        return clip;
     }
 
     private bool TryAddGeneratedNote(float noteTime, NoteKind kind, int laneIndex)
@@ -779,7 +1062,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
         }
 
-        chart.Add(new NoteSpec(noteTime, kind, laneIndex));
+        chart.Add(new NoteSpec(noteTime, kind, Mathf.Clamp(laneIndex, 0, NoteYs.Length - 1)));
         return true;
     }
 
@@ -798,116 +1081,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         musicSource.Stop();
         musicSource.clip = generatedSongClip;
         musicSource.PlayDelayed(MusicLeadIn);
-    }
-
-    private static void AddTone(float[] samples, float startTime, float duration, float frequency, float volume, int waveMode)
-    {
-        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
-        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
-
-        for (int i = start; i < end; i++)
-        {
-            float time = (i - start) / (float)SongSampleRate;
-            float phase = time * frequency * Mathf.PI * 2f;
-            float wave = Mathf.Sin(phase);
-            if (waveMode == 1)
-            {
-                wave = wave * 0.65f + Mathf.Sign(wave) * 0.35f;
-            }
-
-            samples[i] += wave * GetEnvelope(time, duration, 0.012f, 0.08f) * volume;
-        }
-    }
-
-    private static void AddSweep(float[] samples, float startTime, float duration, float fromFrequency, float toFrequency, float volume)
-    {
-        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
-        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
-
-        for (int i = start; i < end; i++)
-        {
-            float time = (i - start) / (float)SongSampleRate;
-            float t = Mathf.Clamp01(time / duration);
-            float frequency = Mathf.Lerp(fromFrequency, toFrequency, t);
-            float wave = Mathf.Sin(time * frequency * Mathf.PI * 2f);
-            samples[i] += wave * GetEnvelope(time, duration, 0.02f, 0.12f) * volume;
-        }
-    }
-
-    private static void AddKick(float[] samples, float startTime, float volume)
-    {
-        float duration = 0.34f;
-        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
-        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
-
-        for (int i = start; i < end; i++)
-        {
-            float time = (i - start) / (float)SongSampleRate;
-            float envelope = Mathf.Exp(-time * 8.5f);
-            float frequency = Mathf.Lerp(42f, 96f, Mathf.Exp(-time * 11f));
-            samples[i] += Mathf.Sin(time * frequency * Mathf.PI * 2f) * envelope * volume;
-        }
-    }
-
-    private static void AddSnare(float[] samples, float startTime, System.Random rng, float volume)
-    {
-        float duration = 0.18f;
-        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
-        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
-
-        for (int i = start; i < end; i++)
-        {
-            float time = (i - start) / (float)SongSampleRate;
-            float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
-            float tone = Mathf.Sin(time * 185f * Mathf.PI * 2f) * 0.35f;
-            samples[i] += (noise * 0.65f + tone) * Mathf.Exp(-time * 18f) * volume;
-        }
-    }
-
-    private static void AddHat(float[] samples, float startTime, System.Random rng, float volume)
-    {
-        float duration = 0.075f;
-        int start = Mathf.Clamp(Mathf.FloorToInt(startTime * SongSampleRate), 0, samples.Length - 1);
-        int end = Mathf.Clamp(Mathf.CeilToInt((startTime + duration) * SongSampleRate), start + 1, samples.Length);
-
-        for (int i = start; i < end; i++)
-        {
-            float time = (i - start) / (float)SongSampleRate;
-            float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
-            samples[i] += noise * Mathf.Exp(-time * 35f) * volume;
-        }
-    }
-
-    private static void NormalizeSong(float[] samples)
-    {
-        float peak = 0f;
-        for (int i = 0; i < samples.Length; i++)
-        {
-            peak = Mathf.Max(peak, Mathf.Abs(samples[i]));
-        }
-
-        if (peak <= 0.01f)
-        {
-            return;
-        }
-
-        float gain = Mathf.Min(0.92f / peak, 1.35f);
-        for (int i = 0; i < samples.Length; i++)
-        {
-            samples[i] = Mathf.Clamp(samples[i] * gain, -0.98f, 0.98f);
-        }
-    }
-
-    private static float GetEnvelope(float time, float duration, float attack, float release)
-    {
-        float attackGain = attack > 0f ? Mathf.Clamp01(time / attack) : 1f;
-        float releaseGain = release > 0f ? Mathf.Clamp01((duration - time) / release) : 1f;
-        return Mathf.Min(attackGain, releaseGain);
-    }
-
-    private static float MidiToFrequency(int midiNote)
-    {
-        return 440f * Mathf.Pow(2f, (midiNote - 69) / 12f);
     }
 
     private static void CreateBlock(Transform parent, string name, Vector2 position, Vector2 size, Color color, int sortingOrder)
