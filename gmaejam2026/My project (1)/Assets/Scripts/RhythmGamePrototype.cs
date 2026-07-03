@@ -104,6 +104,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public float WideLaneJumpChance;
         public float ColorSwitchChance;
         public float GoodNoteChance;
+        public float PeakSearchRadius;
+        public float PeakTimeInfluence;
     }
 
     [Serializable]
@@ -194,7 +196,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         LaneChangeChance = 0.55f,
         WideLaneJumpChance = 0.08f,
         ColorSwitchChance = 0.30f,
-        GoodNoteChance = 0.58f
+        GoodNoteChance = 0.58f,
+        PeakSearchRadius = 0.17f,
+        PeakTimeInfluence = 1f
     };
     private static readonly DifficultyPreset NormalDifficulty = new DifficultyPreset
     {
@@ -219,32 +223,36 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         LaneChangeChance = 0.90f,
         WideLaneJumpChance = 0.35f,
         ColorSwitchChance = 0.50f,
-        GoodNoteChance = 0.55f
+        GoodNoteChance = 0.55f,
+        PeakSearchRadius = 0.17f,
+        PeakTimeInfluence = 1f
     };
     private static readonly DifficultyPreset HardDifficulty = new DifficultyPreset
     {
         Label = "HARD",
-        AnalysisStrongBase = 0.38f,
-        AnalysisStrongOnset = 0.72f,
+        AnalysisStrongBase = 0.44f,
+        AnalysisStrongOnset = 0.78f,
         AnalysisStrongEnergy = 0.16f,
-        AnalysisWeakBase = 0.18f,
-        AnalysisWeakOnset = 0.78f,
+        AnalysisWeakBase = 0.24f,
+        AnalysisWeakOnset = 0.86f,
         AnalysisWeakEnergy = 0.12f,
-        AnalysisHighOnsetThreshold = 0.70f,
+        AnalysisHighOnsetThreshold = 0.66f,
         AnalysisHighOnsetMinChance = 0.98f,
-        AnalysisExtraNoteChance = 0.24f,
-        LongEnergyThreshold = 0.28f,
-        LongNoteChance = 0.74f,
+        AnalysisExtraNoteChance = 0.52f,
+        LongEnergyThreshold = 0.54f,
+        LongNoteChance = 0.24f,
         FallbackStrongChance = 0.98f,
-        FallbackWeakChance = 0.90f,
-        FallbackLongChance = 0.68f,
-        FallbackExtraNoteChance = 0.34f,
-        TapGap = 0.28f,
+        FallbackWeakChance = 0.96f,
+        FallbackLongChance = 0.22f,
+        FallbackExtraNoteChance = 0.58f,
+        TapGap = 0.24f,
         LongGap = 0.78f,
         LaneChangeChance = 1f,
-        WideLaneJumpChance = 0.55f,
-        ColorSwitchChance = 0.72f,
-        GoodNoteChance = 0.52f
+        WideLaneJumpChance = 0.70f,
+        ColorSwitchChance = 0.82f,
+        GoodNoteChance = 0.52f,
+        PeakSearchRadius = 0.055f,
+        PeakTimeInfluence = 0.35f
     };
 
     private static Sprite badTapSprite;
@@ -2753,10 +2761,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             int beatInBar = playableBeatIndex % BeatsPerBar;
             bool strongBeat = beatInBar == 0 || beatInBar == 2;
-            float searchRadius = Mathf.Min(0.17f, analysis.BeatDuration * 0.3f);
-            float noteTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, beatTime, searchRadius);
-            float onsetStrength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, noteTime);
-            float energyStrength = SampleEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, noteTime);
+            float searchRadius = Mathf.Min(difficulty.PeakSearchRadius, analysis.BeatDuration * 0.3f);
+            float peakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, beatTime, searchRadius);
+            float noteTime = Mathf.Lerp(beatTime, peakTime, difficulty.PeakTimeInfluence);
+            float onsetStrength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, peakTime);
+            float energyStrength = SampleEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, peakTime);
             float noteChance = strongBeat
                 ? difficulty.AnalysisStrongBase + onsetStrength * difficulty.AnalysisStrongOnset + energyStrength * difficulty.AnalysisStrongEnergy
                 : difficulty.AnalysisWeakBase + onsetStrength * difficulty.AnalysisWeakOnset + energyStrength * difficulty.AnalysisWeakEnergy;
@@ -2790,8 +2799,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 float extraCenterTime = beatTime + analysis.BeatDuration * 0.5f;
                 if (extraCenterTime <= finalPlayableTime)
                 {
-                    float extraTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, extraCenterTime, searchRadius);
-                    float extraOnset = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, extraTime);
+                    float extraPeakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, extraCenterTime, searchRadius);
+                    float extraTime = Mathf.Lerp(extraCenterTime, extraPeakTime, difficulty.PeakTimeInfluence);
+                    float extraOnset = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, extraPeakTime);
                     float extraChance = difficulty.AnalysisExtraNoteChance * Mathf.Clamp01(0.55f + extraOnset * 0.9f);
                     if (rng.NextDouble() <= extraChance)
                     {
