@@ -91,7 +91,6 @@ function Get-PythonExecutable {
     $candidates = @()
     if ($env:MUREKA_PYTHON_EXE) { $candidates += $env:MUREKA_PYTHON_EXE }
     $candidates += (Join-Path $Root ".venv_mureka\Scripts\python.exe")
-    $candidates += "E:\music\AI_Rhythm_Unity_Advanced\Backend\.venv_backend\Scripts\python.exe"
 
     foreach ($candidate in $candidates) {
         if ((Test-Path -LiteralPath $candidate) -and (Test-PythonPlaywright $candidate)) {
@@ -99,7 +98,7 @@ function Get-PythonExecutable {
         }
     }
 
-    throw "Python with Playwright was not found. Set MUREKA_PYTHON_EXE or create MurekaBackend/.venv_mureka with playwright."
+    throw "Python with Playwright was not found. Run MurekaBackend/setup_mureka_backend.ps1 or set MUREKA_PYTHON_EXE."
 }
 
 function Get-NewStableAudioFile {
