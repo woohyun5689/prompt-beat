@@ -165,7 +165,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float HitX = -3.75f;
     private const float SpawnX = 8.75f;
     private const float DespawnX = -8.5f;
-    private const float NoteSpeed = 4.35f;
+    private const float NoteSpeed = 5.66f;
     private const float HitWindow = 0.34f;
     private const float WheelHitWindow = 0.40f;
     private const float TapMissInputWindow = 0.58f;
@@ -325,6 +325,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Texture2D uiPlayButton;
     private static Texture2D uiSongGenButton;
     private static Texture2D uiSongExpPanel;
+    private static readonly Dictionary<string, Texture2D> SongAlbumArtCache = new Dictionary<string, Texture2D>();
     private static AudioClip uiClickSoundClip;
     private static Texture2D uiPauseStop;
     private static Texture2D uiPauseTitle;
@@ -376,6 +377,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private AudioSource longScratchSoundSource;
     private AudioClip hitSoundClip;
     private AudioClip longScratchSoundClip;
+    private AudioSource metronomeSource;
+    private AudioClip metronomeTickClip;
+    private bool metronomeEnabled;
+    private int metronomeBeatIndex;
+    private float manualLatencyOffsetMs;
     private AudioClip currentSongClip;
     private AudioClip generatedSongClip;
     private SongAnalysis currentSongAnalysis;
@@ -547,7 +553,79 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         UpdateCameraShake();
         UpdateParallaxBackground();
         UpdateHitLineBlink();
+        UpdatePromptLane();
+        UpdateMetronome();
         UpdateHeartAndWorldColor();
+    }
+
+    private double GetJudgeDspTime()
+    {
+        // The judge/visual clock runs a hair behind the raw dsp clock so notes
+        // reach the ring when the beat is actually heard, not when it enters
+        // the audio pipeline. Positive offset = notes arrive later (use when
+        // the music sounds late compared to the visuals).
+        return AudioSettings.dspTime - manualLatencyOffsetMs * 0.001;
+    }
+
+    private void AdjustLatencyOffset(float deltaMs)
+    {
+        manualLatencyOffsetMs = Mathf.Clamp(manualLatencyOffsetMs + deltaMs, -250f, 250f);
+        PlayerPrefs.SetFloat("ManualLatencyOffsetMs", manualLatencyOffsetMs);
+        PlayerPrefs.Save();
+        murekaStatus = "Latency offset: " + manualLatencyOffsetMs.ToString("0") +
+            " ms (F10 earlier / F11 later). Sound feels late? Press F11.";
+    }
+
+    private void ToggleMetronome()
+    {
+        metronomeEnabled = !metronomeEnabled;
+        metronomeBeatIndex = 0;
+        if (metronomeSource != null)
+        {
+            metronomeSource.Stop();
+        }
+
+        murekaStatus = metronomeEnabled
+            ? "Metronome ON (F9) — ticks follow the detected beat grid."
+            : "Metronome OFF.";
+    }
+
+    private void UpdateMetronome()
+    {
+        if (!metronomeEnabled || isGamePaused || songSelectionVisible || metronomeSource == null)
+        {
+            return;
+        }
+
+        List<float> beatTimes = currentSongAnalysis != null ? currentSongAnalysis.BeatTimes : null;
+        if (beatTimes == null || beatTimes.Count == 0)
+        {
+            return;
+        }
+
+        // Ticks are scheduled on the dsp clock, the same clock the music was
+        // scheduled on, so a tick at songStart + beatTime is sample-accurate
+        // against the song. If ticks land on the music's beat, the detected
+        // grid is correct and any perceived offset lives in judging/latency.
+        double now = AudioSettings.dspTime;
+        double songTime = now - songStartDspTime;
+        while (metronomeBeatIndex < beatTimes.Count && beatTimes[metronomeBeatIndex] < songTime + 0.02)
+        {
+            metronomeBeatIndex++;
+        }
+
+        if (metronomeBeatIndex >= beatTimes.Count)
+        {
+            return;
+        }
+
+        double tickDspTime = songStartDspTime + beatTimes[metronomeBeatIndex];
+        if (tickDspTime - now <= 0.18)
+        {
+            metronomeSource.clip = metronomeTickClip;
+            metronomeSource.PlayScheduled(tickDspTime);
+            metronomeBeatIndex++;
+        }
     }
 
     private void OnDestroy()
@@ -717,10 +795,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         GUIStyle titleTextStyle = CreateSongSelectStyle(52f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(1f, 0.93f, 0.16f, 1f));
         GUIStyle infoTitleStyle = CreateSongSelectStyle(32f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
-        GUIStyle promptTitleStyle = CreateSongSelectStyle(22f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0f, 1f, 0.98f, 1f));
         GUIStyle promptTextStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.UpperLeft, FontStyle.Bold, new Color(0.88f, 0.95f, 1f, 0.94f));
         promptTextStyle.wordWrap = true;
-        GUIStyle statusStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.84f, 0.95f, 1f, 0.86f));
 
         Matrix4x4 introTitleMatrix = GUI.matrix;
         float titleIntro = IntroP(0f);
@@ -777,19 +853,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         SongAnalysis previewAnalysis = GetSelectedSongPreviewAnalysis();
         float previewBpm = previewAnalysis != null ? previewAnalysis.Bpm : generatedBpm;
         string infoDescription = hasSongs
-            ? "로컬 음악 파일에서 BPM과 노트를 자동 분석합니다.\n선택한 난이도로 바로 게임을 시작합니다."
+            ? GetSongMoodDescription(GetLocalSongName(selectedLocalSongIndex), previewAnalysis)
             : "Assets/Resources/Music 폴더에 MP3 파일을 넣으면 이 화면에 표시됩니다.";
+        Texture2D selectedAlbumArt = hasSongs ? GetSongAlbumArt(GetLocalSongName(selectedLocalSongIndex)) : null;
         if (uiSongExpPanel != null)
         {
             GUI.DrawTexture(infoRect, uiSongExpPanel, ScaleMode.StretchToFill);
             if (uiSongboxFrame != null)
             {
-                GUI.DrawTexture(R(386f, 634f, 132f, 132f), uiSongboxFrame, ScaleMode.StretchToFill);
+                DrawAlbumArtFrame(R(386f, 634f, 132f, 132f), selectedAlbumArt, 1f, 1f);
             }
 
             GUI.Label(R(548f, 620f, 500f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
-            GUI.Label(R(550f, 674f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
-            GUI.Label(R(552f, 712f, 510f, 58f), infoDescription, promptTextStyle);
+            GUI.Label(R(552f, 680f, 510f, 88f), infoDescription, promptTextStyle);
             DrawEqualizer(R(986f, 620f, 288f, 58f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
             // The dark pill baked into the panel art hosts the BPM readout;
             // anchoring to the panel rect keeps the label on the pill (which
@@ -807,8 +883,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawCircleIcon(R(398f, 642f, 112f, 112f), new Color(0.68f, 0.45f, 1f, 1f), fit);
             GUI.Label(R(538f, 618f, 380f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
             DrawRect(R(538f, 680f, 730f, 3f), new Color(0.48f, 0.24f, 1f, 0.56f));
-            GUI.Label(R(538f, 690f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
-            GUI.Label(R(540f, 732f, 565f, 58f), infoDescription, promptTextStyle);
+            GUI.Label(R(540f, 692f, 535f, 82f), infoDescription, promptTextStyle);
             DrawEqualizer(R(992f, 636f, 270f, 42f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
             Rect bpmRect = new Rect(
                 infoRect.x + infoRect.width * 0.760f,
@@ -845,11 +920,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         GUI.enabled = previousEnabled;
-
-        string status = isLoadingLocalSong
-            ? "노래를 준비하는 중..."
-            : murekaStatus;
-        GUI.Label(R(22f, 42f, 560f, 36f), status, statusStyle);
 
         if (isMurekaPromptWindowVisible)
         {
@@ -1219,7 +1289,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             y += Mathf.Sin(Time.unscaledTime * 2.1f + (songIndex < 0 ? slot : songIndex) * 1.7f)
                 * Mathf.Lerp(7f, 3.5f, selection);
 
-            string songName = hasSongs ? GetDisplaySongTitle(GetLocalSongName(songIndex)) : (slot == 0 ? "NO LOCAL SONG" : "NO SONG");
+            string sourceSongName = hasSongs ? GetLocalSongName(songIndex) : string.Empty;
+            string songName = hasSongs ? GetDisplaySongTitle(sourceSongName) : (slot == 0 ? "NO LOCAL SONG" : "NO SONG");
+            Texture2D albumArt = hasSongs ? GetSongAlbumArt(sourceSongName) : null;
             Color accent = SongCardAccents[songIndex < 0 ? 0 : songIndex % SongCardAccents.Length];
             float centerX = (x + width * 0.5f) * stretchX;
             Rect rect = new Rect(centerX - width * fit * 0.5f, offsetY + y * fit, width * fit, height * fit);
@@ -1248,12 +1320,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 alpha *= Mathf.Clamp01(introSideP * 2.8f);
             }
 
-            DrawSongCard(rect, songName, accent, selection, alpha, uiScale);
+            DrawSongCard(rect, songName, accent, selection, alpha, uiScale, albumArt);
             GUI.matrix = cardMatrix;
         }
     }
 
-    private void DrawSongCard(Rect rect, string songName, Color accent, float selection, float alpha, float scale)
+    private void DrawSongCard(Rect rect, string songName, Color accent, float selection, float alpha, float scale, Texture2D albumArt)
     {
         if (alpha <= 0.01f)
         {
@@ -1266,18 +1338,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             Color previousBoardColor = GUI.color;
             GUI.color = new Color(brightness, brightness, brightness, previousBoardColor.a * alpha);
             GUI.DrawTexture(rect, uiSongboxBoard, ScaleMode.StretchToFill);
-            Rect frameRect = Rect.zero;
-            if (uiSongboxFrame != null)
-            {
-                float frameSize = rect.width * 0.34f;
-                frameRect = new Rect(
-                    rect.center.x - frameSize * 0.5f,
-                    rect.y + rect.height * 0.11f,
-                    frameSize,
-                    frameSize);
-                GUI.DrawTexture(frameRect, uiSongboxFrame, ScaleMode.StretchToFill);
-            }
-
             GUI.color = previousBoardColor;
 
             float dimAlpha = Mathf.Lerp(0.22f, 0f, selection) * alpha;
@@ -1285,12 +1345,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             {
                 GUI.color = new Color(0f, 0f, 0.06f, previousBoardColor.a * dimAlpha);
                 GUI.DrawTexture(rect, uiSongboxBoard, ScaleMode.StretchToFill);
-                if (uiSongboxFrame != null)
-                {
-                    GUI.DrawTexture(frameRect, uiSongboxFrame, ScaleMode.StretchToFill);
-                }
-
                 GUI.color = previousBoardColor;
+            }
+
+            if (uiSongboxFrame != null)
+            {
+                float frameSize = rect.width * 0.34f;
+                Rect frameRect = new Rect(
+                    rect.center.x - frameSize * 0.5f,
+                    rect.y + rect.height * 0.11f,
+                    frameSize,
+                    frameSize);
+
+                DrawAlbumArtFrame(frameRect, albumArt, Mathf.Lerp(0.58f, 1f, selection), alpha);
             }
         }
         else
@@ -1329,6 +1396,34 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawOutlinedLabel(textRect, songName, style, new Color(0.16f, 0.04f, 0.34f, 1f), 2.4f * scale);
         GUI.matrix = previousMatrix;
         GUI.color = previousGuiColor;
+    }
+
+    private static void DrawAlbumArtFrame(Rect frameRect, Texture2D albumArt, float brightness, float alpha)
+    {
+        if (uiSongboxFrame == null)
+        {
+            return;
+        }
+
+        Color previousColor = GUI.color;
+        if (albumArt != null)
+        {
+            // The transparent opening in the 139 px frame spans roughly px
+            // 26..112. The inset guarantees the artwork never reaches the
+            // transparent pixels outside the frame's outer border.
+            float artInset = frameRect.width * (25f / 139f);
+            Rect artRect = new Rect(
+                frameRect.x + artInset,
+                frameRect.y + artInset,
+                frameRect.width - artInset * 2f,
+                frameRect.height - artInset * 2f);
+            GUI.color = new Color(brightness, brightness, brightness, previousColor.a * alpha);
+            GUI.DrawTexture(artRect, albumArt, ScaleMode.ScaleAndCrop);
+        }
+
+        GUI.color = new Color(brightness, brightness, brightness, previousColor.a * alpha);
+        GUI.DrawTexture(frameRect, uiSongboxFrame, ScaleMode.StretchToFill);
+        GUI.color = previousColor;
     }
 
     private static void DrawFloatingNote(Rect rect, Color color)
@@ -1618,6 +1713,155 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         return string.IsNullOrWhiteSpace(title) ? songName.Trim() : title;
+    }
+
+    private static Texture2D GetSongAlbumArt(string songName)
+    {
+        string key = string.IsNullOrWhiteSpace(songName) ? string.Empty : songName.Trim().ToLowerInvariant();
+        string resourceName = null;
+        if (key.Contains("bhutan") || key.Contains("부탄"))
+        {
+            resourceName = "bhutan";
+        }
+        else if (key.Contains("bubblegum arcade"))
+        {
+            resourceName = "bubblegum_arcade";
+        }
+        else if (key.Contains("colorful summer") || key.Contains("컬러풀 썸머"))
+        {
+            resourceName = "colorful_summer";
+        }
+        else if (key.Contains("빛난 여름의 기적"))
+        {
+            resourceName = "shining_summer_miracle";
+        }
+        else if (key.Contains("옥수수 밭의 춤"))
+        {
+            resourceName = "cornfield_dance";
+        }
+        else if (key.Contains("우리만의 여름"))
+        {
+            resourceName = "our_summer";
+        }
+        else if (key.Contains("파란 조각"))
+        {
+            resourceName = "blue_fragments";
+        }
+        else if (key.Contains("한여름 밤의 바람"))
+        {
+            resourceName = "midsummer_night_wind";
+        }
+        else if (key.Contains("한여름 밤의 주파수"))
+        {
+            resourceName = "midsummer_night_frequency";
+        }
+        else if (key.Contains("한여름 밤의 질주"))
+        {
+            resourceName = "midsummer_night_sprint";
+        }
+        else if (key.Contains("let_s party") || key.Contains("let's party") || key.Contains("lets party"))
+        {
+            resourceName = "lets_party";
+        }
+
+        if (string.IsNullOrEmpty(resourceName))
+        {
+            return null;
+        }
+
+        if (SongAlbumArtCache.TryGetValue(resourceName, out Texture2D cached) && cached != null)
+        {
+            return cached;
+        }
+
+        Texture2D albumArt = Resources.Load<Texture2D>("UI/AlbumArt/" + resourceName);
+        if (albumArt != null)
+        {
+            SongAlbumArtCache[resourceName] = albumArt;
+        }
+
+        return albumArt;
+    }
+
+    private static string GetSongMoodDescription(string songName, SongAnalysis analysis)
+    {
+        string key = string.IsNullOrWhiteSpace(songName) ? string.Empty : songName.Trim().ToLowerInvariant();
+        if (key.Contains("bhutan") || key.Contains("부탄"))
+        {
+            return "맑고 이국적인 멜로디 위로 가벼운 리듬이 흐르는, 산뜻한 여행 같은 곡.";
+        }
+
+        if (key.Contains("bubblegum arcade"))
+        {
+            return "통통 튀는 신스와 단단한 비트가 이어지는, 달콤하고 경쾌한 오락실 팝.";
+        }
+
+        if (key.Contains("colorful summer") || key.Contains("컬러풀 썸머"))
+        {
+            return "빠른 비트와 반짝이는 고역이 쉴 새 없이 터지는, 화려하고 에너지 넘치는 여름.";
+        }
+
+        if (key.Contains("빛난 여름의 기적"))
+        {
+            return "반짝이는 사운드와 감성적인 진행이 어우러진, 벅차고 청량한 여름의 순간.";
+        }
+
+        if (key.Contains("옥수수 밭의 춤"))
+        {
+            return "따뜻한 음색 위로 촘촘한 리듬이 뛰노는, 익살스럽고 포근한 미드템포 춤곡.";
+        }
+
+        if (key.Contains("우리만의 여름"))
+        {
+            return "선명한 신스와 힘 있는 사운드가 펼쳐지는, 추억과 설렘이 섞인 여름 팝.";
+        }
+
+        if (key.Contains("파란 조각"))
+        {
+            return "여유로운 박자와 맑은 음색이 잔잔히 번지는, 시원하고 서정적인 곡.";
+        }
+
+        if (key.Contains("한여름 밤의 바람"))
+        {
+            return "부드러운 다이내믹과 밝은 멜로디가 스치는, 산뜻한 밤바람 같은 곡.";
+        }
+
+        if (key.Contains("한여름 밤의 주파수"))
+        {
+            return "빠른 템포와 전자음이 밤공기를 가르는, 몽환적이면서 질주감 있는 신스 팝.";
+        }
+
+        if (key.Contains("한여름 밤의 질주"))
+        {
+            return "묵직한 비트와 어두운 색채가 속도를 끌어올리는, 긴장감 있는 야간 질주곡.";
+        }
+
+        if (key.Contains("let_s party") || key.Contains("let's party") || key.Contains("lets party"))
+        {
+            return "강한 에너지와 반짝이는 고역이 끝까지 밀어붙이는, 밝고 신나는 파티 트랙.";
+        }
+
+        if (analysis != null)
+        {
+            if (analysis.Bpm >= 140f)
+            {
+                return "빠른 템포와 촘촘한 리듬이 몰아치는, 속도감과 에너지가 강한 곡.";
+            }
+
+            if (analysis.Bpm >= 118f)
+            {
+                return "경쾌한 비트와 선명한 멜로디가 어우러진, 활기차고 밝은 분위기의 곡.";
+            }
+
+            if (analysis.Bpm >= 95f)
+            {
+                return "안정적인 리듬과 편안한 흐름이 이어지는, 기분 좋게 몸을 맡길 수 있는 곡.";
+            }
+
+            return "느긋한 박자와 여유로운 멜로디가 번지는, 차분하고 감성적인 분위기의 곡.";
+        }
+
+        return "리듬과 멜로디의 분위기를 분석하고 있습니다...";
     }
 
     private SongAnalysis GetSelectedSongPreviewAnalysis()
@@ -1944,9 +2188,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawRect(progressRect, new Color(0.34f, 0.14f, 0.58f, 0.9f));
         DrawRect(new Rect(progressRect.x, progressRect.y, progressRect.width * progress, progressRect.height), new Color(1f, 0.25f, 0.82f, 1f));
 
-        float songInfoIntro = IntroProgress(introTime, 0.30f, 0.44f);
-        smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.82f * Mathf.Clamp01(songInfoIntro * 2.4f));
-        GUI.Label(new Rect(18f * scale, 16f * scale - (1f - EaseOutCubic(songInfoIntro)) * 72f * scale, 430f * scale, 26f * scale), GetDisplaySongTitle(generatedSongLabel) + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
         smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.82f * Mathf.Clamp01(heartIntro * 2.4f));
         GUI.Label(new Rect(126f * scale - (1f - EaseOutCubic(heartIntro)) * 140f * scale, Screen.height - 56f * scale, 180f * scale, 26f * scale), "BEST " + bestCombo + "x", smallStyle);
 
@@ -2384,6 +2625,50 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float dataScale = Mathf.Max(0.0001f, dataAsset.scale);
         float boundsCenterX = (skeletonData.X + skeletonData.Width * 0.5f) * dataScale;
         float boundsCenterY = (skeletonData.Y + skeletonData.Height * 0.5f) * dataScale;
+        float boundsHalfWidth = Mathf.Max(0.0001f, skeletonData.Width * dataScale * 0.5f);
+        float boundsHalfHeight = Mathf.Max(0.0001f, skeletonData.Height * dataScale * 0.5f);
+
+        // Frame the union of the whole animation's bounds, not just the setup
+        // pose — jumps and flailing ears move outside the idle silhouette and
+        // would otherwise be clipped at the render texture edges.
+        if (skeletonData.Animations.Count > 0)
+        {
+            Spine.Animation resultAnimation = skeletonData.Animations.Items[0];
+            Skeleton skeleton = resultCharacter.Skeleton;
+            float minX = float.MaxValue;
+            float minY = float.MaxValue;
+            float maxX = float.MinValue;
+            float maxY = float.MinValue;
+            float[] vertexBuffer = null;
+            const int boundsSamples = 24;
+            for (int i = 0; i <= boundsSamples; i++)
+            {
+                float sampleTime = resultAnimation.Duration * i / boundsSamples;
+                skeleton.SetToSetupPose();
+                resultAnimation.Apply(skeleton, 0f, sampleTime, false, null, 1f, MixBlend.Setup, MixDirection.In);
+                skeleton.UpdateWorldTransform(Skeleton.Physics.Update);
+                skeleton.GetBounds(out float sampleX, out float sampleY, out float sampleWidth, out float sampleHeight, ref vertexBuffer);
+                if (sampleWidth <= 0f || sampleHeight <= 0f)
+                {
+                    continue;
+                }
+
+                minX = Mathf.Min(minX, sampleX);
+                minY = Mathf.Min(minY, sampleY);
+                maxX = Mathf.Max(maxX, sampleX + sampleWidth);
+                maxY = Mathf.Max(maxY, sampleY + sampleHeight);
+            }
+
+            if (maxX > minX && maxY > minY)
+            {
+                boundsCenterX = (minX + maxX) * 0.5f;
+                boundsCenterY = (minY + maxY) * 0.5f;
+                boundsHalfWidth = (maxX - minX) * 0.5f;
+                boundsHalfHeight = (maxY - minY) * 0.5f;
+            }
+
+            skeleton.SetToSetupPose();
+        }
 
         resultCharacterTexture = new RenderTexture(672, 888, 0, RenderTextureFormat.ARGB32);
 
@@ -2397,11 +2682,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         resultCharacterCamera.nearClipPlane = 0.3f;
         resultCharacterCamera.farClipPlane = 100f;
         resultCharacterCamera.targetTexture = resultCharacterTexture;
-        // Frame the setup-pose bounds with a little margin in the 672x888 view.
         float viewAspect = 672f / 888f;
         resultCharacterCamera.orthographicSize = Mathf.Max(
-            skeletonData.Height * dataScale * 0.525f,
-            skeletonData.Width * dataScale * 0.525f / viewAspect);
+            boundsHalfHeight * 1.05f,
+            boundsHalfWidth * 1.05f / viewAspect);
     }
 
     private void ReleaseResultCharacter()
@@ -2884,6 +3168,21 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 return;
             }
 
+            if (keyboard.f9Key.wasPressedThisFrame)
+            {
+                ToggleMetronome();
+            }
+
+            if (keyboard.f10Key.wasPressedThisFrame)
+            {
+                AdjustLatencyOffset(-5f);
+            }
+
+            if (keyboard.f11Key.wasPressedThisFrame)
+            {
+                AdjustLatencyOffset(5f);
+            }
+
             if (keyboard.qKey.wasPressedThisFrame)
             {
                 TryHit(NoteKind.GoodTap);
@@ -2963,7 +3262,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         Note best = null;
         float bestDelta = GetHitWindow(kind);
-        double now = AudioSettings.dspTime;
+        double now = GetJudgeDspTime();
 
         for (int i = 0; i < notes.Count; i++)
         {
@@ -2988,7 +3287,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         Note best = null;
         float bestDelta = GetMissInputWindow(inputKind);
-        double now = AudioSettings.dspTime;
+        double now = GetJudgeDspTime();
 
         for (int i = 0; i < notes.Count; i++)
         {
@@ -3031,7 +3330,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void ApplyHit(Note note)
     {
-        float delta = (float)Math.Abs(AudioSettings.dspTime - note.HitDspTime);
+        float delta = (float)Math.Abs(GetJudgeDspTime() - note.HitDspTime);
         JudgementKind judgement;
         int points;
 
@@ -3189,7 +3488,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         bool allJudged = true;
-        double now = AudioSettings.dspTime;
+        double now = GetJudgeDspTime();
 
         for (int i = 0; i < notes.Count; i++)
         {
@@ -3383,7 +3682,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         Note target = null;
         float bestDistance = AutoFollowLookAhead;
-        double now = AudioSettings.dspTime;
+        double now = GetJudgeDspTime();
 
         for (int i = 0; i < notes.Count; i++)
         {
@@ -3419,6 +3718,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         notes.Clear();
+        metronomeBeatIndex = 0;
+        if (metronomeSource != null)
+        {
+            metronomeSource.Stop();
+        }
+
         wheelInputAccumulator = 0f;
         wheelGestureConsumed = false;
         lastWheelSignalTime = -999f;
@@ -3796,6 +4101,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             CreateStageDecorations(stage.transform);
         }
         RegisterColorRecoveryTargets(stage.transform);
+        CreatePromptLane(stage.transform);
         GameObject hitLine = new GameObject("Blinking Search Cursor");
         hitLine.transform.SetParent(stage.transform, false);
         hitLine.transform.position = new Vector3(HitX, LaneY, 0f);
@@ -4711,6 +5017,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         longScratchSoundSource.spatialBlend = 0f;
         longScratchSoundSource.volume = 1f;
         longScratchSoundClip = CreateLongScratchSoundClip();
+
+        metronomeSource = gameObject.AddComponent<AudioSource>();
+        metronomeSource.playOnAwake = false;
+        metronomeSource.loop = false;
+        metronomeSource.spatialBlend = 0f;
+        metronomeSource.volume = 0.9f;
+        metronomeTickClip = CreateMetronomeTickClip();
+
+        manualLatencyOffsetMs = PlayerPrefs.GetFloat("ManualLatencyOffsetMs", 0f);
     }
 
     private static AudioClip CreateHitSoundClip()
@@ -4734,6 +5049,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         AudioClip clip = AudioClip.Create("Short Punchy Note Hit", sampleCount, 1, sampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    private static AudioClip CreateMetronomeTickClip()
+    {
+        const int sampleRate = 48000;
+        const float duration = 0.05f;
+        int sampleCount = Mathf.CeilToInt(sampleRate * duration);
+        float[] samples = new float[sampleCount];
+        for (int i = 0; i < sampleCount; i++)
+        {
+            float time = i / (float)sampleRate;
+            float envelope = Mathf.Exp(-time * 160f);
+            samples[i] = Mathf.Sin(2f * Mathf.PI * 1760f * time) * envelope * 0.85f;
+        }
+
+        AudioClip clip = AudioClip.Create("Metronome Tick", sampleCount, 1, sampleRate, false);
         clip.SetData(samples, 0);
         return clip;
     }
@@ -6001,8 +6334,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         int laneCursor = 1;
         int playableBeatIndex = 0;
         bool lastIsGood = true;
+        int colorRunLength = 0;
+        int lastWheelBeatIndex = -100;
         float firstPlayableTime = Mathf.Max(0.85f, analysis.BeatOffset);
         float finalPlayableTime = Mathf.Max(firstPlayableTime, generatedSongLength - 1.1f);
+        float songAverageEnergy = Mathf.Max(
+            0.05f,
+            AverageEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, firstPlayableTime, finalPlayableTime));
+        const int PhraseBeats = BeatsPerBar * 4;
 
         for (int i = 0; i < analysis.BeatTimes.Count; i++)
         {
@@ -6013,12 +6352,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
 
             int beatInBar = playableBeatIndex % BeatsPerBar;
+            int phraseBeat = playableBeatIndex % PhraseBeats;
             bool strongBeat = beatInBar == 0 || beatInBar == 2;
+            bool phraseStart = phraseBeat == 0;
+            bool fillBar = phraseBeat >= PhraseBeats - BeatsPerBar;
             float searchRadius = Mathf.Min(difficulty.PeakSearchRadius, analysis.BeatDuration * 0.3f);
             float peakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, beatTime, searchRadius);
             float noteTime = Mathf.Lerp(beatTime, peakTime, difficulty.PeakTimeInfluence);
             float onsetStrength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, peakTime);
             float energyStrength = SampleEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, peakTime);
+
+            // Loud sections (chorus) play dense, quiet sections breathe.
+            float sectionEnergy = AverageEnvelope(
+                analysis.EnergyEnvelope,
+                analysis.EnvelopeRate,
+                beatTime - analysis.BeatDuration * 4f,
+                beatTime + analysis.BeatDuration * 4f);
+            float densityScale = Mathf.Clamp(sectionEnergy / songAverageEnergy, 0.75f, 1.25f);
+
             float noteChance = strongBeat
                 ? difficulty.AnalysisStrongBase + onsetStrength * difficulty.AnalysisStrongOnset + energyStrength * difficulty.AnalysisStrongEnergy
                 : difficulty.AnalysisWeakBase + onsetStrength * difficulty.AnalysisWeakOnset + energyStrength * difficulty.AnalysisWeakEnergy;
@@ -6027,27 +6378,63 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 noteChance = Mathf.Max(noteChance, difficulty.AnalysisHighOnsetMinChance);
             }
 
-            if (rng.NextDouble() <= Mathf.Clamp01(noteChance))
+            noteChance *= densityScale;
+            if (fillBar)
+            {
+                noteChance *= 1.12f;
+            }
+
+            // Every phrase opens with a guaranteed anchor note on the downbeat.
+            bool wheelPlacedThisBeat = false;
+            if (phraseStart || rng.NextDouble() <= Mathf.Clamp01(noteChance))
             {
                 laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
-                bool isBlue = PickGoodNote(rng, difficulty, ref lastIsGood);
+                bool isBlue = PickChartNoteColor(rng, difficulty, ref lastIsGood, ref colorRunLength);
                 float sustainedEnergy = AverageEnvelope(
                     analysis.EnergyEnvelope,
                     analysis.EnvelopeRate,
                     noteTime,
                     noteTime + analysis.BeatDuration * 1.5f);
+
+                // Wheels anchor musical boundaries: strongly favored on phrase
+                // and bar starts, rare mid-bar, and at least a bar apart so the
+                // scroll gesture stays special instead of spammy.
+                float wheelChance = difficulty.LongNoteChance;
+                if (phraseStart)
+                {
+                    wheelChance *= 2.2f;
+                }
+                else if (beatInBar == 0)
+                {
+                    wheelChance *= 1.6f;
+                }
+                else
+                {
+                    wheelChance *= 0.5f;
+                }
+
+                bool wheelReady = playableBeatIndex - lastWheelBeatIndex >= BeatsPerBar;
                 bool longNoteSlot = strongBeat || onsetStrength >= 0.82f;
                 bool isLong = longNoteSlot
+                    && wheelReady
                     && sustainedEnergy >= difficulty.LongEnergyThreshold
-                    && rng.NextDouble() <= difficulty.LongNoteChance;
+                    && rng.NextDouble() <= Mathf.Min(0.9f, wheelChance);
                 NoteKind kind = isLong
                     ? (isBlue ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
                     : (isBlue ? NoteKind.GoodTap : NoteKind.BadTap);
 
-                TryAddGeneratedNote(noteTime, kind, laneCursor);
+                if (TryAddGeneratedNote(noteTime, kind, laneCursor) && isLong)
+                {
+                    lastWheelBeatIndex = playableBeatIndex;
+                    wheelPlacedThisBeat = true;
+                }
             }
 
-            if (difficulty.AnalysisExtraNoteChance > 0f && beatInBar < BeatsPerBar - 1)
+            // Half-beat extras build toward the end of each phrase (fill bar
+            // may lead into the next downbeat), ease off right after it, and
+            // rest after a wheel so the hand can come back from the scroll.
+            bool extraSlotOpen = beatInBar < BeatsPerBar - 1 || fillBar;
+            if (difficulty.AnalysisExtraNoteChance > 0f && extraSlotOpen && !wheelPlacedThisBeat)
             {
                 float extraCenterTime = i + 1 < analysis.BeatTimes.Count
                     ? (beatTime + analysis.BeatTimes[i + 1]) * 0.5f
@@ -6057,11 +6444,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     float extraPeakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, extraCenterTime, searchRadius);
                     float extraTime = Mathf.Lerp(extraCenterTime, extraPeakTime, difficulty.PeakTimeInfluence);
                     float extraOnset = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, extraPeakTime);
-                    float extraChance = difficulty.AnalysisExtraNoteChance * Mathf.Clamp01(0.55f + extraOnset * 0.9f);
+                    float extraChance = difficulty.AnalysisExtraNoteChance
+                        * Mathf.Clamp01(0.55f + extraOnset * 0.9f)
+                        * densityScale;
+                    if (fillBar)
+                    {
+                        extraChance *= 1.55f;
+                    }
+                    else if (phraseBeat < BeatsPerBar)
+                    {
+                        extraChance *= 0.75f;
+                    }
+
                     if (rng.NextDouble() <= extraChance)
                     {
                         laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
-                        bool isBlue = PickGoodNote(rng, difficulty, ref lastIsGood);
+                        bool isBlue = PickChartNoteColor(rng, difficulty, ref lastIsGood, ref colorRunLength);
                         TryAddGeneratedNote(extraTime, isBlue ? NoteKind.GoodTap : NoteKind.BadTap, laneCursor);
                     }
                 }
@@ -6074,6 +6472,29 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             chart.Add(new NoteSpec(firstPlayableTime, NoteKind.GoodTap, 1));
         }
+    }
+
+    private static bool PickChartNoteColor(System.Random rng, DifficultyPreset difficulty, ref bool lastIsGood, ref int runLength)
+    {
+        bool previous = lastIsGood;
+        bool isGood = PickGoodNote(rng, difficulty, ref lastIsGood);
+        if (isGood == previous)
+        {
+            runLength++;
+            // Cap same-color runs so one hand never idles for a whole bar.
+            if (runLength >= 3)
+            {
+                isGood = !isGood;
+                lastIsGood = isGood;
+                runLength = 0;
+            }
+        }
+        else
+        {
+            runLength = 0;
+        }
+
+        return isGood;
     }
 
     private static float FindEnvelopePeakTime(float[] envelope, float rate, float centerTime, float radiusSeconds)

@@ -12,6 +12,8 @@ using UnityEngine.InputSystem;
 public sealed class TitleScreenController : MonoBehaviour
 {
     private const string StartSoundResourcePath = "TitleScreen/Audio/UI_WC_Score";
+    private const string TitleMusicResourcePath = "TitleScreen/Audio/TitleTheme";
+    private const float TitleMusicVolume = 0.72f;
 
     [Header("Scene Flow")]
     [SerializeField] private string nextSceneName = "";
@@ -78,6 +80,7 @@ public sealed class TitleScreenController : MonoBehaviour
     private SkyStarParticle[] skyStarParticles = Array.Empty<SkyStarParticle>();
     private LogoBurstParticle[] logoBurstParticles = Array.Empty<LogoBurstParticle>();
     private Image startFlashImage;
+    private AudioSource titleMusicSource;
     private Material runtimeSkyStarMaterial;
     private Material runtimeLogoParticleMaterial;
     private float startReactionTime = -1000f;
@@ -125,6 +128,24 @@ public sealed class TitleScreenController : MonoBehaviour
         CreateStartReactionOverlay();
         CreateSkyStarParticles();
         CreateLogoBurstParticles();
+        SetupTitleMusic();
+    }
+
+    private void SetupTitleMusic()
+    {
+        AudioClip clip = Resources.Load<AudioClip>(TitleMusicResourcePath);
+        if (clip == null)
+        {
+            return;
+        }
+
+        titleMusicSource = gameObject.AddComponent<AudioSource>();
+        titleMusicSource.clip = clip;
+        titleMusicSource.loop = true;
+        titleMusicSource.playOnAwake = false;
+        titleMusicSource.spatialBlend = 0f;
+        titleMusicSource.volume = TitleMusicVolume;
+        titleMusicSource.Play();
     }
 
     private void Update()
@@ -184,6 +205,11 @@ public sealed class TitleScreenController : MonoBehaviour
             }
 
             touchPromptGroup.alpha = promptAlpha;
+        }
+
+        if (startRequested && titleMusicSource != null)
+        {
+            titleMusicSource.volume = TitleMusicVolume * (1f - Smooth01(GetStartReactionProgress(time)));
         }
     }
 
