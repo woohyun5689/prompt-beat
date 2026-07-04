@@ -363,6 +363,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool isGamePaused;
     private double pauseStartedDspTime;
     private float pausedSongElapsed;
+    private bool worldHiddenForSongSelect;
+    private float songCarouselOffset;
+    private float songCarouselVelocity;
     private bool chartFinished;
     private float lastMurekaBackendStartAttempt = -999f;
     private int score;
@@ -435,6 +438,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void Update()
     {
         ReadInput();
+        UpdateSongSelectWorldVisibility();
+        UpdateSongCarousel();
         if (isGamePaused)
         {
             return;
@@ -563,12 +568,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         bool hasSongs = localSongs.Count > 0;
         string selectedSongName = GetLocalSongName(selectedLocalSongIndex);
-        string previousSongName = hasSongs ? GetLocalSongName(WrapSongIndex(selectedLocalSongIndex - 1)) : "NO SONG";
-        string nextSongName = hasSongs ? GetLocalSongName(WrapSongIndex(selectedLocalSongIndex + 1)) : "NO SONG";
 
-        DrawSongCard(R(196f, 310f, 260f, 224f), previousSongName, new Color(0f, 0.75f, 0.82f, 0.88f), false, uiScale);
-        DrawSongCard(R(1216f, 310f, 260f, 224f), nextSongName, new Color(0.05f, 0.30f, 0.95f, 0.86f), false, uiScale);
-        DrawSongCard(R(570f, 116f, 532f, 468f), hasSongs ? selectedSongName : "NO LOCAL SONG", new Color(0.46f, 0.12f, 0.96f, 0.95f), true, uiScale);
+        DrawSongCarousel(offsetX, offsetY, fit, hasSongs, uiScale);
 
         bool previousEnabled = GUI.enabled;
         GUI.enabled = previousEnabled && hasSongs && localSongs.Count > 1 && !isLoadingLocalSong;
@@ -600,12 +601,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawNeonPanel(R(1115f, 730f, 158f, 46f), new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
         GUI.Label(R(1128f, 731f, 130f, 44f), generatedBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
 
-        DrawSongSelectDifficultyButton(R(354f, 812f, 212f, 112f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
-        DrawSongSelectDifficultyButton(R(580f, 812f, 212f, 112f), RhythmDifficulty.Normal, new Color(0.08f, 0.74f, 0.25f, 1f), uiScale);
-        DrawSongSelectDifficultyButton(R(800f, 812f, 212f, 112f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
+        // Bottom row: generate on the far left, difficulty centered, PLAY on the right.
+        DrawSongSelectDifficultyButton(R(504f, 812f, 212f, 112f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
+        DrawSongSelectDifficultyButton(R(730f, 812f, 212f, 112f), RhythmDifficulty.Normal, new Color(0.08f, 0.74f, 0.25f, 1f), uiScale);
+        DrawSongSelectDifficultyButton(R(956f, 812f, 212f, 112f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
 
         GUI.enabled = previousEnabled && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
-        if (DrawArcadeButton(R(1038f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale))
+        if (DrawArcadeButton(R(24f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale))
         {
             GenerateNewSong();
         }
@@ -644,29 +646,177 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawRect(new Rect(rect.x, rect.y + rect.height * 0.76f, rect.width, rect.height * 0.03f), new Color(0.10f, 0.95f, 1f, 0.18f));
     }
 
-    private static void DrawNeonPanel(Rect rect, Color fill, Color border, float scale)
+    private static void DrawNeonPanel(Rect rect, Color fill, Color border, float scale, float alpha = 1f)
     {
-        DrawRect(rect, new Color(border.r, border.g, border.b, 0.24f));
-        DrawRect(new Rect(rect.x + 4f * scale, rect.y + 4f * scale, rect.width - 8f * scale, rect.height - 8f * scale), border);
-        DrawRect(new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale), fill);
-        DrawRect(new Rect(rect.x + 14f * scale, rect.y + 14f * scale, rect.width - 28f * scale, 3f * scale), new Color(1f, 1f, 1f, 0.25f));
+        DrawRect(rect, new Color(border.r, border.g, border.b, 0.24f * alpha));
+        DrawRect(new Rect(rect.x + 4f * scale, rect.y + 4f * scale, rect.width - 8f * scale, rect.height - 8f * scale), new Color(border.r, border.g, border.b, border.a * alpha));
+        DrawRect(new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale), new Color(fill.r, fill.g, fill.b, fill.a * alpha));
+        DrawRect(new Rect(rect.x + 14f * scale, rect.y + 14f * scale, rect.width - 28f * scale, 3f * scale), new Color(1f, 1f, 1f, 0.25f * alpha));
     }
 
-    private void DrawSongCard(Rect rect, string songName, Color accent, bool selected, float scale)
+    // Reference-space layout anchors for carousel slots -2..+2.
+    private static readonly float[] CarouselAnchorX = { -220f, 196f, 570f, 1216f, 1712f };
+    private static readonly float[] CarouselAnchorY = { 396f, 310f, 116f, 310f, 396f };
+    private static readonly float[] CarouselAnchorW = { 180f, 260f, 532f, 260f, 180f };
+    private static readonly float[] CarouselAnchorH = { 152f, 224f, 468f, 224f, 152f };
+
+    private static readonly Color[] SongCardAccents =
     {
-        Color fill = selected
-            ? new Color(accent.r * 0.45f, accent.g * 0.25f, accent.b * 0.72f, 0.96f)
-            : new Color(accent.r * 0.55f, accent.g * 0.45f, accent.b * 0.75f, 0.72f);
-        DrawNeonPanel(rect, fill, new Color(0.78f, 0.95f, 1f, selected ? 0.96f : 0.68f), scale);
+        new Color(0.46f, 0.12f, 0.96f, 1f),
+        new Color(0f, 0.75f, 0.82f, 1f),
+        new Color(0.05f, 0.30f, 0.95f, 1f),
+        new Color(0.95f, 0.20f, 0.75f, 1f),
+        new Color(0.10f, 0.80f, 0.45f, 1f)
+    };
+
+    private void UpdateSongSelectWorldVisibility()
+    {
+        // On the song-select screen only the parallax backdrop should remain:
+        // the runner, prompt lane, hit line, ring and notes are gameplay-only.
+        if (worldHiddenForSongSelect == songSelectionVisible)
+        {
+            return;
+        }
+
+        worldHiddenForSongSelect = songSelectionVisible;
+        bool show = !songSelectionVisible;
+        if (characterAnimation != null)
+        {
+            characterAnimation.gameObject.SetActive(show);
+        }
+
+        if (judgeRing != null)
+        {
+            judgeRing.gameObject.SetActive(show);
+        }
+
+        if (hitLineRenderer != null)
+        {
+            hitLineRenderer.gameObject.SetActive(show);
+        }
+
+        if (notesRoot != null)
+        {
+            notesRoot.gameObject.SetActive(show);
+        }
+
+        for (int i = 0; i < promptLaneSegments.Length; i++)
+        {
+            if (promptLaneSegments[i] != null)
+            {
+                promptLaneSegments[i].gameObject.SetActive(show);
+            }
+        }
+    }
+
+    private void UpdateSongCarousel()
+    {
+        if (songCarouselOffset == 0f && songCarouselVelocity == 0f)
+        {
+            return;
+        }
+
+        // Underdamped spring toward zero: the cards glide over and land with
+        // a tiny bounce instead of snapping into place.
+        const float stiffness = 130f;
+        const float damping = 17f;
+        float deltaTime = Mathf.Min(Time.unscaledDeltaTime, 0.033f);
+        songCarouselVelocity += (-songCarouselOffset * stiffness - songCarouselVelocity * damping) * deltaTime;
+        songCarouselOffset += songCarouselVelocity * deltaTime;
+
+        if (Mathf.Abs(songCarouselOffset) < 0.0015f && Mathf.Abs(songCarouselVelocity) < 0.02f)
+        {
+            songCarouselOffset = 0f;
+            songCarouselVelocity = 0f;
+        }
+    }
+
+    private void DrawSongCarousel(float offsetX, float offsetY, float fit, bool hasSongs, float uiScale)
+    {
+        float animOffset = songCarouselOffset;
+        List<int> slots = new List<int> { -2, -1, 0, 1, 2 };
+        // Cards closer to the center draw later so they sit on top mid-slide.
+        slots.Sort((a, b) => Mathf.Abs(b - animOffset).CompareTo(Mathf.Abs(a - animOffset)));
+
+        for (int i = 0; i < slots.Count; i++)
+        {
+            int slot = slots[i];
+            float t = slot - animOffset;
+            float distance = Mathf.Abs(t);
+            if (distance > 2.35f)
+            {
+                continue;
+            }
+
+            float clamped = Mathf.Clamp(t, -2f, 2f);
+            int lower = Mathf.Clamp(Mathf.FloorToInt(clamped), -2, 1);
+            float frac = clamped - lower;
+            int anchorA = lower + 2;
+            int anchorB = anchorA + 1;
+            float x = Mathf.Lerp(CarouselAnchorX[anchorA], CarouselAnchorX[anchorB], frac);
+            float y = Mathf.Lerp(CarouselAnchorY[anchorA], CarouselAnchorY[anchorB], frac);
+            float width = Mathf.Lerp(CarouselAnchorW[anchorA], CarouselAnchorW[anchorB], frac);
+            float height = Mathf.Lerp(CarouselAnchorH[anchorA], CarouselAnchorH[anchorB], frac);
+
+            int songIndex = hasSongs ? WrapSongIndex(selectedLocalSongIndex + slot) : -1;
+            float selection = Mathf.Clamp01(1f - distance);
+            float alpha = Mathf.Clamp01(2f - distance);
+
+            // Gentle idle bobbing, calmer for the focused card.
+            y += Mathf.Sin(Time.unscaledTime * 2.1f + (songIndex < 0 ? slot : songIndex) * 1.7f)
+                * Mathf.Lerp(7f, 3.5f, selection);
+
+            string songName = hasSongs ? GetLocalSongName(songIndex) : (slot == 0 ? "NO LOCAL SONG" : "NO SONG");
+            Color accent = SongCardAccents[songIndex < 0 ? 0 : songIndex % SongCardAccents.Length];
+            Rect rect = new Rect(offsetX + x * fit, offsetY + y * fit, width * fit, height * fit);
+            DrawSongCard(rect, songName, accent, selection, alpha, uiScale);
+        }
+    }
+
+    private void DrawSongCard(Rect rect, string songName, Color accent, float selection, float alpha, float scale)
+    {
+        if (alpha <= 0.01f)
+        {
+            return;
+        }
+
+        Color selectedFill = new Color(accent.r * 0.45f, accent.g * 0.25f, accent.b * 0.72f, 0.96f);
+        Color unselectedFill = new Color(accent.r * 0.55f, accent.g * 0.45f, accent.b * 0.75f, 0.72f);
+        Color fill = Color.Lerp(unselectedFill, selectedFill, selection);
+        DrawNeonPanel(rect, fill, new Color(0.78f, 0.95f, 1f, Mathf.Lerp(0.68f, 0.96f, selection)), scale, alpha);
 
         Rect iconRect = new Rect(rect.center.x - rect.width * 0.16f, rect.y + rect.height * 0.15f, rect.width * 0.32f, rect.height * 0.32f);
-        DrawCircleIcon(iconRect, new Color(0.95f, 0.74f, 1f, selected ? 1f : 0.72f), scale);
+        DrawCircleIcon(iconRect, new Color(0.95f, 0.74f, 1f, Mathf.Lerp(0.72f, 1f, selection)), scale, alpha);
 
-        GUIStyle style = CreateSongSelectStyle(selected ? 44f : 21f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
-        Rect labelRect = selected
-            ? new Rect(rect.x + 42f * scale, rect.yMax - 130f * scale, rect.width - 84f * scale, 76f * scale)
-            : new Rect(rect.x + 20f * scale, rect.yMax - 74f * scale, rect.width - 40f * scale, 46f * scale);
-        DrawOutlinedLabel(labelRect, songName, style, new Color(0.16f, 0.04f, 0.34f, 1f), 2.4f * scale);
+        // Fixed font size + GUI.matrix scaling: animating the font size itself
+        // regenerates dynamic-font glyphs every frame, and the atlas rebuild makes
+        // every label on screen flicker with garbled overlaps mid-slide.
+        GUIStyle style = CreateSongSelectStyle(44f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        Rect selectedLabelRect = new Rect(rect.x + 42f * scale, rect.yMax - 130f * scale, rect.width - 84f * scale, 76f * scale);
+        Rect unselectedLabelRect = new Rect(rect.x + 20f * scale, rect.yMax - 74f * scale, rect.width - 40f * scale, 46f * scale);
+        Rect labelRect = LerpRect(unselectedLabelRect, selectedLabelRect, selection);
+        float textScale = Mathf.Lerp(21f / 44f, 1f, selection);
+        Rect textRect = new Rect(
+            labelRect.center.x - labelRect.width / textScale * 0.5f,
+            labelRect.center.y - labelRect.height / textScale * 0.5f,
+            labelRect.width / textScale,
+            labelRect.height / textScale);
+        Color previousGuiColor = GUI.color;
+        GUI.color = new Color(previousGuiColor.r, previousGuiColor.g, previousGuiColor.b, previousGuiColor.a * alpha);
+        Matrix4x4 previousMatrix = GUI.matrix;
+        GUIUtility.ScaleAroundPivot(new Vector2(textScale, textScale), labelRect.center);
+        DrawOutlinedLabel(textRect, songName, style, new Color(0.16f, 0.04f, 0.34f, 1f), 2.4f * scale);
+        GUI.matrix = previousMatrix;
+        GUI.color = previousGuiColor;
+    }
+
+    private static Rect LerpRect(Rect a, Rect b, float t)
+    {
+        return new Rect(
+            Mathf.Lerp(a.x, b.x, t),
+            Mathf.Lerp(a.y, b.y, t),
+            Mathf.Lerp(a.width, b.width, t),
+            Mathf.Lerp(a.height, b.height, t));
     }
 
     private static void DrawFloatingNote(Rect rect, Color color)
@@ -676,12 +826,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawRect(new Rect(rect.x + rect.width * 0.06f, rect.y + rect.height * 0.58f, rect.width * 0.55f, rect.height * 0.28f), color);
     }
 
-    private static void DrawCircleIcon(Rect rect, Color color, float scale)
+    private static void DrawCircleIcon(Rect rect, Color color, float scale, float alpha = 1f)
     {
-        DrawRect(rect, new Color(color.r, color.g, color.b, 0.42f));
+        DrawRect(rect, new Color(color.r, color.g, color.b, 0.42f * alpha));
         Rect inner = new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale);
-        DrawRect(inner, new Color(color.r * 0.55f, color.g * 0.55f, color.b * 0.9f, 0.92f));
+        DrawRect(inner, new Color(color.r * 0.55f, color.g * 0.55f, color.b * 0.9f, 0.92f * alpha));
+        Color previousGuiColor = GUI.color;
+        GUI.color = new Color(previousGuiColor.r, previousGuiColor.g, previousGuiColor.b, previousGuiColor.a * alpha);
         GUI.Label(inner, "♪", CreateSongSelectStyle(42f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+        GUI.color = previousGuiColor;
     }
 
     private static void DrawEqualizer(Rect rect, float scale)
@@ -691,7 +844,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float barWidth = (rect.width - gap * (bars - 1)) / bars;
         for (int i = 0; i < bars; i++)
         {
-            float normalized = 0.25f + Mathf.Abs(Mathf.Sin(i * 1.33f)) * 0.75f;
+            float normalized = 0.25f + Mathf.Abs(Mathf.Sin(i * 1.33f + Time.unscaledTime * 3.1f)) * 0.75f;
             float height = rect.height * normalized;
             Rect bar = new Rect(rect.x + i * (barWidth + gap), rect.yMax - height, barWidth, height);
             Color color = Color.Lerp(new Color(1f, 0.18f, 0.85f, 0.95f), new Color(0f, 0.95f, 1f, 0.95f), i / (float)(bars - 1));
@@ -788,6 +941,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         selectedLocalSongIndex = WrapSongIndex(selectedLocalSongIndex + offset);
+        // Keep the cards visually in place, then let the spring ease them into
+        // their new slots so browsing feels like sliding a shelf of albums.
+        songCarouselOffset = Mathf.Clamp(songCarouselOffset + offset, -2.2f, 2.2f);
         generatedSongLabel = GetLocalSongName(selectedLocalSongIndex);
         generatedSongProvider = "LOCAL";
         generatedSongWarning = string.Empty;
@@ -2261,7 +2417,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void UpdateParallaxBackground()
     {
-        float deltaTime = Time.deltaTime;
+        // The song-select screen keeps the backdrop drifting by lazily.
+        float deltaTime = Time.deltaTime * (songSelectionVisible ? 0.3f : 1f);
         for (int i = 0; i < parallaxLayers.Count; i++)
         {
             ParallaxLayer layer = parallaxLayers[i];
