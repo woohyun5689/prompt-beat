@@ -1788,6 +1788,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             resourceName = "lets_party";
         }
+        else if (key.Contains("프롬프트 비트 메인곡"))
+        {
+            resourceName = "prompt_beat_main";
+        }
 
         if (string.IsNullOrEmpty(resourceName))
         {
