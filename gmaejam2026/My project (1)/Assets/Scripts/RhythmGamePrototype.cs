@@ -184,7 +184,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float LongNoteTailDistance = 2.74f;
     private const float HitLineWidthScale = 0.24f;
     private const float HitLineHeightScale = 1.25f;
-    private const float HitLineDownOffsetMultiplier = 1.25f;
     private const float BlueLongNoteVerticalOffset = 1.94f;
     private const float CharacterAfterimageDuration = 0.40f;
     private const float WheelGestureThreshold = 0.35f;
@@ -368,6 +367,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Color cameraOriginalBackgroundColor;
     private Vector3 cameraBasePosition;
     private float cameraShakeUntil;
+    private float cameraShakeDuration = 0.11f;
+    private float cameraShakeStrength = 0.065f;
     private float wheelInputAccumulator;
     private float lastWheelSignalTime = -999f;
     private bool wheelGestureConsumed;
@@ -382,6 +383,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool metronomeEnabled;
     private int metronomeBeatIndex;
     private float manualLatencyOffsetMs;
+    private bool autoPlayEnabled;
     private AudioClip currentSongClip;
     private AudioClip generatedSongClip;
     private SongAnalysis currentSongAnalysis;
@@ -3173,6 +3175,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 ToggleMetronome();
             }
 
+            if (keyboard.f8Key.wasPressedThisFrame)
+            {
+                autoPlayEnabled = !autoPlayEnabled;
+            }
+
             if (keyboard.f10Key.wasPressedThisFrame)
             {
                 AdjustLatencyOffset(-5f);
@@ -3471,6 +3478,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     0f);
                 SpawnHitFxAt(note.Kind, fxPosition, 0.72f + nextFxIndex * 0.045f);
                 PlayLongScratchStepSound(note.Kind, nextFxIndex);
+                TriggerCameraShake(0.1f, 0.052f);
                 nextFxIndex++;
             }
 
@@ -3499,6 +3507,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
 
             allJudged = false;
+            if (autoPlayEnabled && now >= note.HitDspTime)
+            {
+                ApplyHit(note);
+                continue;
+            }
+
             float x = HitX + (float)((note.HitDspTime - now) * NoteSpeed);
 
             if (note.Root != null)
@@ -3548,6 +3562,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         if (hitLineRenderer == null)
         {
+            return;
+        }
+
+        // While a song plays, the cursor blinks on the detected beat grid —
+        // visible on the first half of every beat, hidden on the second — so
+        // the bar itself acts as a visual metronome. Uses the same clock and
+        // latency terms as the notes, so "cursor appears" == "note on the ring".
+        SongAnalysis analysis = currentSongAnalysis;
+        if (!songSelectionVisible
+            && !isGamePaused
+            && musicSource != null
+            && musicSource.isPlaying
+            && IsAnalysisUsable(analysis)
+            && analysis.BeatDuration > 0.01f)
+        {
+            float songTime = (float)(GetJudgeDspTime() - songStartDspTime - audioVisualLatency);
+            float beatPhase = Mathf.Repeat(songTime - analysis.BeatOffset, analysis.BeatDuration) / analysis.BeatDuration;
+            hitLineRenderer.enabled = beatPhase < 0.5f;
             return;
         }
 
@@ -4109,12 +4141,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         hitLineRenderer = hitLine.AddComponent<SpriteRenderer>();
         hitLineRenderer.sprite = hitLineSprite;
         hitLineRenderer.sortingOrder = 2;
-        if (hitLineSprite != null && hitLineSprite.pixelsPerUnit > 0f)
-        {
-            float baseHeight = hitLineSprite.rect.height / hitLineSprite.pixelsPerUnit;
-            float downOnlyOffset = (HitLineHeightScale - 1f) * baseHeight * 0.5f * HitLineDownOffsetMultiplier;
-            hitLine.transform.position = new Vector3(HitX, LaneY - downOnlyOffset, 0f);
-        }
 
         GameObject ring = new GameObject("Judge Ring");
         ring.transform.SetParent(stage.transform, false);
@@ -4647,7 +4673,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             SpawnCharacterMusicNotes();
         }
 
-        TriggerCameraShake();
+        // Wheel hits kick harder — the scratch burst that follows keeps the
+        // rumble alive with smaller per-step shakes.
+        if (IsWheelNote(note.Kind))
+        {
+            TriggerCameraShake(0.22f, 0.115f);
+        }
+        else
+        {
+            TriggerCameraShake();
+        }
     }
 
     private void SpawnCharacterMusicNotes()
@@ -4880,9 +4915,30 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
     }
 
-    private void TriggerCameraShake()
+    private void TriggerCameraShake(float duration = 0.11f, float strength = 0.065f)
     {
-        cameraShakeUntil = Time.unscaledTime + 0.11f;
+        // Keep whichever shake is currently stronger so a small kick never
+        // cuts a big impact short.
+        float activeStrength = GetActiveShakeStrength();
+        if (strength < activeStrength)
+        {
+            return;
+        }
+
+        cameraShakeUntil = Mathf.Max(cameraShakeUntil, Time.unscaledTime + duration);
+        cameraShakeDuration = Mathf.Max(0.01f, duration);
+        cameraShakeStrength = strength;
+    }
+
+    private float GetActiveShakeStrength()
+    {
+        float remaining = cameraShakeUntil - Time.unscaledTime;
+        if (remaining <= 0f)
+        {
+            return 0f;
+        }
+
+        return cameraShakeStrength * Mathf.Clamp01(remaining / cameraShakeDuration);
     }
 
     private void UpdateCameraShake()
@@ -4899,9 +4955,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        float damping = Mathf.Clamp01(remaining / 0.11f);
+        float damping = Mathf.Clamp01(remaining / cameraShakeDuration);
         float phase = Time.unscaledTime * 92f;
-        Vector3 offset = new Vector3(Mathf.Sin(phase * 1.37f), Mathf.Cos(phase * 1.91f), 0f) * (0.065f * damping);
+        Vector3 offset = new Vector3(Mathf.Sin(phase * 1.37f), Mathf.Cos(phase * 1.91f), 0f) * (cameraShakeStrength * damping);
         gameCamera.transform.position = cameraBasePosition + offset;
     }
 
@@ -6337,7 +6393,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         int colorRunLength = 0;
         int lastWheelBeatIndex = -100;
         float firstPlayableTime = Mathf.Max(0.85f, analysis.BeatOffset);
-        float finalPlayableTime = Mathf.Max(firstPlayableTime, generatedSongLength - 1.1f);
+        // Clip length often includes a silent tail; end the chart where the
+        // music is last audible so no orphan note arrives after the song ends.
+        float audibleEndTime = FindLastAudibleTime(analysis.EnergyEnvelope, analysis.EnvelopeRate, generatedSongLength);
+        float finalPlayableTime = Mathf.Max(firstPlayableTime, Mathf.Min(generatedSongLength - 1.1f, audibleEndTime - 0.35f));
         float songAverageEnergy = Mathf.Max(
             0.05f,
             AverageEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, firstPlayableTime, finalPlayableTime));
@@ -6384,9 +6443,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 noteChance *= 1.12f;
             }
 
-            // Every phrase opens with a guaranteed anchor note on the downbeat.
+            // Every phrase opens with a guaranteed anchor note on the downbeat,
+            // but only while the music is actually sounding — silent breaks and
+            // outros must not get forced notes.
+            bool audibleAnchor = phraseStart && (energyStrength >= 0.06f || onsetStrength >= 0.05f);
             bool wheelPlacedThisBeat = false;
-            if (phraseStart || rng.NextDouble() <= Mathf.Clamp01(noteChance))
+            if (audibleAnchor || rng.NextDouble() <= Mathf.Clamp01(noteChance))
             {
                 laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
                 bool isBlue = PickChartNoteColor(rng, difficulty, ref lastIsGood, ref colorRunLength);
@@ -6472,6 +6534,91 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             chart.Add(new NoteSpec(firstPlayableTime, NoteKind.GoodTap, 1));
         }
+
+        ValidateGeneratedChart(analysis, finalPlayableTime);
+    }
+
+    private void ValidateGeneratedChart(SongAnalysis analysis, float finalPlayableTime)
+    {
+        if (chart.Count == 0)
+        {
+            return;
+        }
+
+        int wheelCount = 0;
+        int silentNotes = 0;
+        int gapViolations = 0;
+        float minimumGap = float.MaxValue;
+        for (int i = 0; i < chart.Count; i++)
+        {
+            if (IsWheelNote(chart[i].Kind))
+            {
+                wheelCount++;
+            }
+
+            if (SampleEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, chart[i].Time) < 0.05f)
+            {
+                silentNotes++;
+            }
+
+            if (i > 0)
+            {
+                float gap = chart[i].Time - chart[i - 1].Time;
+                minimumGap = Mathf.Min(minimumGap, gap);
+                if (gap < 0.1f)
+                {
+                    gapViolations++;
+                }
+            }
+        }
+
+        float firstNoteTime = chart[0].Time;
+        float lastNoteTime = chart[chart.Count - 1].Time;
+        float duration = Mathf.Max(0.01f, lastNoteTime - firstNoteTime);
+        Debug.Log(string.Format(
+            "[Chart] {0} — {1}: {2} notes ({3} wheels), {4:F2} notes/s, min gap {5:F2}s, notes {6:F1}s→{7:F1}s (limit {8:F1}s)",
+            generatedSongLabel,
+            GetDifficultyPreset().Label,
+            chart.Count,
+            wheelCount,
+            chart.Count / duration,
+            minimumGap >= float.MaxValue ? 0f : minimumGap,
+            firstNoteTime,
+            lastNoteTime,
+            finalPlayableTime));
+
+        if (silentNotes > 0)
+        {
+            Debug.LogWarning("[Chart] " + silentNotes + " note(s) sit in near-silent audio — check breaks/outro.");
+        }
+
+        if (gapViolations > 0)
+        {
+            Debug.LogWarning("[Chart] " + gapViolations + " note pair(s) closer than 0.1s.");
+        }
+
+        if (lastNoteTime > finalPlayableTime + 0.01f)
+        {
+            Debug.LogWarning("[Chart] Last note exceeds the playable end limit.");
+        }
+    }
+
+    private static float FindLastAudibleTime(float[] energyEnvelope, float envelopeRate, float fallbackTime)
+    {
+        if (energyEnvelope == null || energyEnvelope.Length == 0 || envelopeRate <= 0f)
+        {
+            return fallbackTime;
+        }
+
+        for (int i = energyEnvelope.Length - 1; i >= 0; i--)
+        {
+            if (energyEnvelope[i] >= 0.05f)
+            {
+                return i / envelopeRate;
+            }
+        }
+
+        return fallbackTime;
     }
 
     private static bool PickChartNoteColor(System.Random rng, DifficultyPreset difficulty, ref bool lastIsGood, ref int runLength)
