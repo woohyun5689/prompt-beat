@@ -35,46 +35,6 @@ LOGIN_PAGE_RE = re.compile(
 )
 
 
-def coerce_float(value, default: float) -> float:
-    try:
-        if value is None or value == "":
-            return float(default)
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
-
-
-def env_float(names: tuple[str, ...], default: float) -> float:
-    for name in names:
-        if name in os.environ:
-            return coerce_float(os.environ.get(name), default)
-    return float(default)
-
-
-def job_float(job: dict, key: str, default: float, env_names: tuple[str, ...] = ()) -> float:
-    if key in job:
-        return coerce_float(job.get(key), default)
-    return env_float(env_names, default) if env_names else float(default)
-
-
-DEFAULT_AUTOMATION_TIMEOUT_SECONDS = env_float(
-    ("MUREKA_AUTOMATION_TIMEOUT_SECONDS", "AI_RHYTHM_MUREKA_TIMEOUT_SECONDS"),
-    600.0,
-)
-DEFAULT_LOGIN_WAIT_SECONDS = env_float(
-    ("MUREKA_LOGIN_WAIT_SECONDS", "AI_RHYTHM_MUREKA_LOGIN_WAIT_SECONDS"),
-    180.0,
-)
-DEFAULT_DOWNLOAD_WAIT_SECONDS = env_float(
-    ("MUREKA_WAIT_SECONDS", "AI_RHYTHM_MUREKA_WAIT_SECONDS"),
-    180.0,
-)
-DEFAULT_POLL_SECONDS = env_float(
-    ("MUREKA_POLL_SECONDS", "AI_RHYTHM_MUREKA_POLL_SECONDS"),
-    2.0,
-)
-
-
 def browser_paths() -> list[str]:
     candidates = [
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -809,13 +769,7 @@ def click_use_generated_lyrics(page, start_time: float, timeout: int = 3000, log
     return False
 
 
-def generate_lyrics_from_prompt(
-    page,
-    prompt: str,
-    start_time: float,
-    timeout_seconds: float,
-    poll_seconds: float,
-) -> bool | None:
+def generate_lyrics_from_prompt(page, prompt: str, start_time: float) -> bool | None:
     if not click_matching_text(page, LYRICS_GENERATE_BUTTON_RE, "lyrics generate", timeout=2500):
         return None
 
@@ -832,9 +786,8 @@ def generate_lyrics_from_prompt(
         return False
 
     log(start_time, "Random lyrics generate button clicked.")
-    deadline = time.time() + max(30.0, timeout_seconds)
+    deadline = time.time() + 60.0
     optimized_lyrics = False
-    poll_ms = int(max(0.5, poll_seconds) * 1000)
     while time.time() < deadline:
         if not optimized_lyrics:
             if click_optimize_generated_lyrics(page, start_time, timeout=1000, log_missing=False):
@@ -844,7 +797,7 @@ def generate_lyrics_from_prompt(
         elif click_use_generated_lyrics(page, start_time, timeout=1000, log_missing=False):
             log(start_time, "Optimized lyrics detected and use button clicked.")
             return True
-        page.wait_for_timeout(poll_ms)
+        page.wait_for_timeout(1500)
 
     if not optimized_lyrics:
         log(start_time, "Timed out while waiting for the generated lyrics optimize button.")
@@ -1035,16 +988,10 @@ def click_optimize_lyrics_warning_if_available(page, start_time: float) -> bool:
     return False
 
 
-def complete_post_warning_lyrics_flow(
-    page,
-    start_time: float,
-    timeout_seconds: float,
-    poll_seconds: float,
-) -> bool:
-    deadline = time.time() + max(30.0, timeout_seconds)
+def complete_post_warning_lyrics_flow(page, start_time: float, timeout_seconds: float = 120.0) -> bool:
+    deadline = time.time() + timeout_seconds
     lyrics_generation_clicked = False
     optimized_lyrics = False
-    poll_ms = int(max(0.5, poll_seconds) * 1000)
     while time.time() < deadline:
         if not optimized_lyrics:
             if not lyrics_generation_clicked and click_random_lyrics_generate(page, start_time):
@@ -1064,7 +1011,7 @@ def complete_post_warning_lyrics_flow(
             log(start_time, "Post-warning lyrics were applied, but create button was not found.")
             return False
 
-        page.wait_for_timeout(poll_ms)
+        page.wait_for_timeout(1500)
 
     if optimized_lyrics:
         log(start_time, "Timed out waiting for post-warning use lyrics button.")
@@ -1075,22 +1022,13 @@ def complete_post_warning_lyrics_flow(
     return False
 
 
-def wait_for_new_song(
-    page,
-    baseline: list[str],
-    start_time: float,
-    timeout_seconds: float,
-    job_path: Path,
-    post_warning_timeout_seconds: float,
-    poll_seconds: float,
-) -> None:
-    deadline = time.time() + max(1.0, timeout_seconds)
+def wait_for_new_song(page, baseline: list[str], start_time: float, timeout_seconds: float, job_path: Path) -> None:
+    deadline = time.time() + min(timeout_seconds, 540.0)
     last_log = 0.0
-    poll_ms = int(max(0.5, poll_seconds) * 1000)
     while time.time() < deadline:
         if click_optimize_lyrics_warning_if_available(page, start_time):
             save_job_screenshot(page, job_path, "lyrics_optimized_create")
-            complete_post_warning_lyrics_flow(page, start_time, post_warning_timeout_seconds, poll_seconds)
+            complete_post_warning_lyrics_flow(page, start_time)
             last_log = 0.0
             continue
 
@@ -1105,7 +1043,7 @@ def wait_for_new_song(
         if elapsed - last_log >= 30.0:
             log(start_time, "Waiting for Mureka generation to appear in the library.")
             last_log = elapsed
-        page.wait_for_timeout(poll_ms)
+        page.wait_for_timeout(5000)
 
 
 def save_audio_from_url(context, url: str, download_dir: Path) -> Path | None:
@@ -1414,44 +1352,9 @@ def main() -> int:
     create_url = str(job.get("create_url") or "https://mureka.ai/ko/create")
     download_dir = Path(job["download_dir"]).expanduser()
     profile_dir = Path(job["profile_dir"]).expanduser()
-    timeout_seconds = job_float(
-        job,
-        "timeout_seconds",
-        DEFAULT_AUTOMATION_TIMEOUT_SECONDS,
-        ("MUREKA_AUTOMATION_TIMEOUT_SECONDS", "AI_RHYTHM_MUREKA_TIMEOUT_SECONDS"),
-    )
-    login_wait_seconds = job_float(
-        job,
-        "login_wait_seconds",
-        DEFAULT_LOGIN_WAIT_SECONDS,
-        ("MUREKA_LOGIN_WAIT_SECONDS", "AI_RHYTHM_MUREKA_LOGIN_WAIT_SECONDS"),
-    )
-    download_wait_seconds = job_float(
-        job,
-        "download_wait_seconds",
-        DEFAULT_DOWNLOAD_WAIT_SECONDS,
-        ("MUREKA_WAIT_SECONDS", "AI_RHYTHM_MUREKA_WAIT_SECONDS"),
-    )
-    poll_seconds = job_float(
-        job,
-        "poll_seconds",
-        DEFAULT_POLL_SECONDS,
-        ("MUREKA_POLL_SECONDS", "AI_RHYTHM_MUREKA_POLL_SECONDS"),
-    )
-    lyrics_wait_seconds = job_float(
-        job,
-        "lyrics_wait_seconds",
-        login_wait_seconds,
-        ("MUREKA_LYRICS_WAIT_SECONDS", "AI_RHYTHM_MUREKA_LYRICS_WAIT_SECONDS"),
-    )
-    post_warning_lyrics_wait_seconds = job_float(
-        job,
-        "post_warning_lyrics_wait_seconds",
-        lyrics_wait_seconds,
-        ("MUREKA_POST_WARNING_LYRICS_WAIT_SECONDS", "AI_RHYTHM_MUREKA_POST_WARNING_LYRICS_WAIT_SECONDS"),
-    )
+    timeout_seconds = float(job.get("timeout_seconds") or 600)
+    login_wait_seconds = float(job.get("login_wait_seconds") or os.environ.get("AI_RHYTHM_MUREKA_LOGIN_WAIT_SECONDS", "180"))
     headless = truthy(job.get("headless", os.environ.get("AI_RHYTHM_MUREKA_HEADLESS", "0")))
-    poll_ms = int(max(0.5, poll_seconds) * 1000)
     download_dir.mkdir(parents=True, exist_ok=True)
     profile_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1527,7 +1430,7 @@ def main() -> int:
                 if not prompted_login:
                     log(start_time, f"Waiting for Mureka login before filling lyrics/style fields. Log in within {int(login_wait_seconds)} seconds.")
                     prompted_login = True
-                page.wait_for_timeout(poll_ms)
+                page.wait_for_timeout(5000)
                 continue
 
             click_new_song_if_available(page)
@@ -1545,17 +1448,11 @@ def main() -> int:
                 if not prompted_login:
                     log(start_time, f"Waiting for Mureka login before filling lyrics/style fields. Log in within {int(login_wait_seconds)} seconds.")
                     prompted_login = True
-                page.wait_for_timeout(poll_ms)
+                page.wait_for_timeout(5000)
                 continue
 
             if not generated_lyrics:
-                lyrics_result = generate_lyrics_from_prompt(
-                    page,
-                    prompt,
-                    start_time,
-                    lyrics_wait_seconds,
-                    poll_seconds,
-                )
+                lyrics_result = generate_lyrics_from_prompt(page, prompt, start_time)
                 if lyrics_result is True:
                     generated_lyrics = True
                 elif lyrics_result is False:
@@ -1581,7 +1478,7 @@ def main() -> int:
             if not prompted_login:
                 log(start_time, f"Could not complete lyrics/style setup yet. If a login page is open, log in; waiting up to {int(login_wait_seconds)} seconds.")
                 prompted_login = True
-            page.wait_for_timeout(poll_ms)
+            page.wait_for_timeout(5000)
 
         if not filled_prompt:
             log(start_time, f"Could not complete lyrics generation and style setup after {int(login_wait_seconds)} seconds. Log in or switch to Mureka create page, then retry.")
@@ -1593,17 +1490,9 @@ def main() -> int:
             log(start_time, "Prompt was filled, but create button was not found. Click Create manually; Unity will still watch Downloads.")
         else:
             log(start_time, "Mureka create button clicked.")
-            wait_for_new_song(
-                page,
-                baseline_songs,
-                start_time,
-                timeout_seconds,
-                job_path,
-                post_warning_lyrics_wait_seconds,
-                poll_seconds,
-            )
+            wait_for_new_song(page, baseline_songs, start_time, timeout_seconds, job_path)
 
-        deadline = time.time() + max(1.0, download_wait_seconds)
+        deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             downloaded = try_click_download(page, download_dir)
             if downloaded:
@@ -1618,7 +1507,7 @@ def main() -> int:
                     context.close()
                     return 0
 
-            page.wait_for_timeout(poll_ms)
+            page.wait_for_timeout(5000)
 
         log(start_time, "Timed out before automatic download. If the song is ready, click Download manually in the open Mureka window.")
         context.close()

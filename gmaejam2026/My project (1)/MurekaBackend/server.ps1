@@ -144,8 +144,6 @@ function New-MurekaTrackFromImportedAutomation {
         profile_dir = $ProfileDir
         timeout_seconds = $AutomationTimeoutSeconds
         login_wait_seconds = $LoginWaitSeconds
-        download_wait_seconds = $WaitDownloadSeconds
-        poll_seconds = $PollSeconds
         create_url = $CreateUrl
         headless = $false
     }
