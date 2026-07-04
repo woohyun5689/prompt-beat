@@ -184,6 +184,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float AnalysisTargetRate = 100f;
     private const float MinimumAnalyzedBpm = 80f;
     private const float MaximumAnalyzedBpm = 180f;
+    private const float SongPreviewVolume = 0.34f;
+    private const float SongPreviewPeakSearchSeconds = 16f;
     private const int SourceUiSheetWidth = 3560;
     private const int SourceUiSheetHeight = 2000;
     private const string MurekaBackendUrl = "http://127.0.0.1:8067";
@@ -318,6 +320,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private readonly List<ParallaxLayer> parallaxLayers = new List<ParallaxLayer>();
     private readonly Dictionary<string, SongAnalysis> songAnalysisCache = new Dictionary<string, SongAnalysis>();
     private readonly HashSet<NoteKind> tutorialKindsShown = new HashSet<NoteKind>();
+    private Coroutine previewSongAnalysisRoutine;
+    private string previewSongAnalysisKey;
+    private string previewSongAudioKey;
+    private float previewSongLoopStartTime;
 
     private Transform notesRoot;
     private Transform judgeRing;
@@ -336,6 +342,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private float lastWheelSignalTime = -999f;
     private bool wheelGestureConsumed;
     private AudioSource musicSource;
+    private AudioSource songPreviewSource;
     private AudioSource hitSoundSource;
     private AudioSource longScratchSoundSource;
     private AudioClip hitSoundClip;
@@ -363,7 +370,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool isEditingPrompt;
     private bool isMurekaPromptWindowVisible;
     private RhythmDifficulty selectedDifficulty = RhythmDifficulty.Normal;
-    private bool hasSelectedDifficultyForSong;
     private bool songSelectionVisible = true;
     private bool isGamePaused;
     private double pauseStartedDspTime;
@@ -445,6 +451,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         ReadInput();
         UpdateSongSelectWorldVisibility();
         UpdateSongCarousel();
+        UpdateSongPreviewPlayback();
         if (isGamePaused)
         {
             return;
@@ -461,6 +468,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void OnDestroy()
     {
+        StopSongPreview();
+
         if (generatedSongClip != null)
         {
             Destroy(generatedSongClip);
@@ -602,9 +611,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 ? "로컬 음악 파일에서 BPM과 노트를 자동 분석합니다.\n선택한 난이도로 바로 게임을 시작합니다."
                 : "Assets/Resources/Music 폴더에 MP3 파일을 넣으면 이 화면에 표시됩니다.",
             promptTextStyle);
-        DrawEqualizer(R(992f, 636f, 270f, 42f), fit);
+        SongAnalysis previewAnalysis = GetSelectedSongPreviewAnalysis();
+        float previewBpm = previewAnalysis != null ? previewAnalysis.Bpm : generatedBpm;
+        DrawEqualizer(R(992f, 636f, 270f, 42f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
         DrawNeonPanel(R(1115f, 730f, 158f, 46f), new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
-        GUI.Label(R(1128f, 731f, 130f, 44f), generatedBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+        GUI.Label(R(1128f, 731f, 130f, 44f), previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
 
         // Bottom row: generate on the far left, difficulty centered, PLAY on the right.
         DrawSongSelectDifficultyButton(R(504f, 812f, 212f, 112f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
@@ -619,7 +630,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             murekaStatus = "Write a prompt, then check the server or generate a song.";
         }
 
-        GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && hasSelectedDifficultyForSong && !isLoadingLocalSong;
+        GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && !isLoadingLocalSong;
         if (DrawArcadeButton(R(1340f, 812f, 316f, 112f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale))
         {
             PlayLocalSong(selectedLocalSongIndex);
@@ -918,19 +929,67 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.color = previousGuiColor;
     }
 
-    private static void DrawEqualizer(Rect rect, float scale)
+    private static void DrawEqualizer(Rect rect, float scale, SongAnalysis analysis, float centerTime)
     {
-        int bars = 16;
-        float gap = 5f * scale;
+        int bars = 30;
+        float gap = 3f * scale;
         float barWidth = (rect.width - gap * (bars - 1)) / bars;
+        float centerY = rect.y + rect.height * 0.52f;
+        DrawRect(new Rect(rect.x, centerY - 1f * scale, rect.width, 2f * scale), new Color(0.26f, 0.48f, 1f, 0.25f));
+
+        if (!IsAnalysisUsable(analysis))
+        {
+            DrawFallbackEqualizer(rect, scale, bars, gap, barWidth, centerY);
+            return;
+        }
+
+        float beatDuration = Mathf.Clamp(analysis.BeatDuration, 0.28f, 0.95f);
+        float windowSeconds = Mathf.Clamp(beatDuration * 4.5f, 1.35f, 3.8f);
+        float pulse = Mathf.Sin(Time.unscaledTime * 5.2f) * 0.045f;
+
         for (int i = 0; i < bars; i++)
         {
-            float normalized = 0.25f + Mathf.Abs(Mathf.Sin(i * 1.33f + Time.unscaledTime * 3.1f)) * 0.75f;
-            float height = rect.height * normalized;
-            Rect bar = new Rect(rect.x + i * (barWidth + gap), rect.yMax - height, barWidth, height);
-            Color color = Color.Lerp(new Color(1f, 0.18f, 0.85f, 0.95f), new Color(0f, 0.95f, 1f, 0.95f), i / (float)(bars - 1));
+            float x = i / (float)(bars - 1);
+            float sampleTime = centerTime + (x - 0.5f) * windowSeconds;
+            float energy = SampleEnvelopeLooped(analysis.EnergyEnvelope, analysis.EnvelopeRate, sampleTime);
+            float onset = SampleEnvelopeLooped(analysis.OnsetStrength, analysis.EnvelopeRate, sampleTime);
+            float highlight = Mathf.Exp(-Mathf.Pow((x - 0.5f) / 0.23f, 2f));
+            float edgeEase = Mathf.Sin(x * Mathf.PI);
+            float normalized = Mathf.Clamp01(0.08f + energy * 0.54f + onset * 0.34f + highlight * 0.12f + edgeEase * 0.035f + pulse);
+            float height = Mathf.Max(3f * scale, rect.height * normalized);
+            Rect bar = new Rect(rect.x + i * (barWidth + gap), centerY - height * 0.5f, barWidth, height);
+            Color color = Color.Lerp(new Color(1f, 0.18f, 0.85f, 0.92f), new Color(0f, 0.95f, 1f, 0.92f), x);
+            color = Color.Lerp(color, Color.white, Mathf.Clamp01(onset * 0.22f + highlight * 0.10f));
             DrawRect(bar, color);
         }
+    }
+
+    private static void DrawFallbackEqualizer(Rect rect, float scale, int bars, float gap, float barWidth, float centerY)
+    {
+        for (int i = 0; i < bars; i++)
+        {
+            float x = i / (float)(bars - 1);
+            float crestA = Mathf.Exp(-Mathf.Pow((x - 0.18f) / 0.11f, 2f));
+            float crestB = Mathf.Exp(-Mathf.Pow((x - 0.48f) / 0.16f, 2f));
+            float crestC = Mathf.Exp(-Mathf.Pow((x - 0.76f) / 0.13f, 2f));
+            float fineWave = Mathf.Abs(Mathf.Sin(x * 22f + Time.unscaledTime * 2.2f)) * 0.10f;
+            float pulse = Mathf.Sin(Time.unscaledTime * 3.1f + i * 0.61f) * 0.055f;
+            float normalized = Mathf.Clamp01(0.16f + crestA * 0.42f + crestB * 0.62f + crestC * 0.48f + fineWave + pulse);
+            float height = Mathf.Max(3f * scale, rect.height * normalized);
+            Rect bar = new Rect(rect.x + i * (barWidth + gap), centerY - height * 0.5f, barWidth, height);
+            Color color = Color.Lerp(new Color(1f, 0.18f, 0.85f, 0.95f), new Color(0f, 0.95f, 1f, 0.95f), x);
+            DrawRect(bar, color);
+        }
+    }
+
+    private static bool IsAnalysisUsable(SongAnalysis analysis)
+    {
+        return analysis != null
+            && analysis.EnvelopeRate > 0f
+            && analysis.EnergyEnvelope != null
+            && analysis.EnergyEnvelope.Length > 0
+            && analysis.OnsetStrength != null
+            && analysis.OnsetStrength.Length > 0;
     }
 
     private bool DrawCircleButton(Rect rect, string text, float scale)
@@ -955,7 +1014,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawSongSelectDifficultyButton(Rect rect, RhythmDifficulty difficulty, Color fill, float scale)
     {
-        bool selected = hasSelectedDifficultyForSong && selectedDifficulty == difficulty;
+        bool selected = selectedDifficulty == difficulty;
         bool previousEnabled = GUI.enabled;
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && !isLoadingLocalSong && !isRequestingMurekaSong;
         Color border = selected ? new Color(1f, 1f, 1f, 0.96f) : new Color(0.72f, 0.95f, 1f, 0.72f);
@@ -1022,14 +1081,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         selectedLocalSongIndex = WrapSongIndex(selectedLocalSongIndex + offset);
+        StopSongPreview();
         // Keep the cards visually in place, then let the spring ease them into
         // their new slots so browsing feels like sliding a shelf of albums.
         songCarouselOffset = Mathf.Clamp(songCarouselOffset + offset, -2.2f, 2.2f);
-        hasSelectedDifficultyForSong = false;
         generatedSongLabel = GetLocalSongName(selectedLocalSongIndex);
         generatedSongProvider = "LOCAL";
         generatedSongWarning = string.Empty;
-        murekaStatus = "Selected " + generatedSongLabel + ". Choose a difficulty.";
+        murekaStatus = "Selected " + generatedSongLabel + ". Difficulty: " + GetDifficultyPreset().Label + ".";
     }
 
     private string GetLocalSongName(int index)
@@ -1040,6 +1099,287 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         return localSongs[index].Name;
+    }
+
+    private SongAnalysis GetSelectedSongPreviewAnalysis()
+    {
+        if (selectedLocalSongIndex < 0 || selectedLocalSongIndex >= localSongs.Count)
+        {
+            return null;
+        }
+
+        LocalSongEntry song = localSongs[selectedLocalSongIndex];
+        if (song == null)
+        {
+            return null;
+        }
+
+        if (IsAnalysisUsable(currentSongAnalysis) && string.Equals(song.Name, generatedSongLabel, StringComparison.CurrentCultureIgnoreCase))
+        {
+            return currentSongAnalysis;
+        }
+
+        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        string requestKey = GetPreviewSongRequestKey(song, clip);
+        if (string.IsNullOrEmpty(requestKey))
+        {
+            return null;
+        }
+
+        if (clip != null)
+        {
+            string analysisKey = GetAnalysisCacheKey(clip);
+            if (songAnalysisCache.TryGetValue(analysisKey, out SongAnalysis cachedAnalysis))
+            {
+                return cachedAnalysis;
+            }
+        }
+
+        if (previewSongAnalysisRoutine != null && previewSongAnalysisKey == requestKey)
+        {
+            return null;
+        }
+
+        if (previewSongAnalysisRoutine != null)
+        {
+            StopCoroutine(previewSongAnalysisRoutine);
+            previewSongAnalysisRoutine = null;
+        }
+
+        previewSongAnalysisKey = requestKey;
+        previewSongAnalysisRoutine = StartCoroutine(AnalyzeSelectedSongPreviewRoutine(song, requestKey));
+        return null;
+    }
+
+    private static string GetPreviewSongRequestKey(LocalSongEntry song, AudioClip clip)
+    {
+        if (song == null)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(song.FilePath))
+        {
+            return "file|" + song.FilePath;
+        }
+
+        return clip != null ? "clip|" + GetAnalysisCacheKey(clip) : null;
+    }
+
+    private IEnumerator AnalyzeSelectedSongPreviewRoutine(LocalSongEntry song, string requestKey)
+    {
+        if (song == null)
+        {
+            FinishPreviewSongAnalysis(requestKey);
+            yield break;
+        }
+
+        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        if (clip == null)
+        {
+            if (string.IsNullOrWhiteSpace(song.FilePath) || !File.Exists(song.FilePath))
+            {
+                FinishPreviewSongAnalysis(requestKey);
+                yield break;
+            }
+
+            using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(new Uri(song.FilePath).AbsoluteUri, GuessAudioType(song.FilePath)))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    FinishPreviewSongAnalysis(requestKey);
+                    yield break;
+                }
+
+                clip = DownloadHandlerAudioClip.GetContent(request);
+                if (clip == null)
+                {
+                    FinishPreviewSongAnalysis(requestKey);
+                    yield break;
+                }
+
+                clip.name = song.Name;
+                song.LoadedClip = clip;
+            }
+        }
+
+        if (clip.loadState != AudioDataLoadState.Loaded)
+        {
+            clip.LoadAudioData();
+            while (clip.loadState == AudioDataLoadState.Loading)
+            {
+                yield return null;
+            }
+
+            if (clip.loadState == AudioDataLoadState.Failed)
+            {
+                FinishPreviewSongAnalysis(requestKey);
+                yield break;
+            }
+        }
+
+        string analysisKey = GetAnalysisCacheKey(clip);
+        if (!songAnalysisCache.ContainsKey(analysisKey))
+        {
+            SongAnalysis analysis = null;
+            yield return AnalyzeSongRoutine(clip, value => analysis = value);
+            if (analysis != null)
+            {
+                songAnalysisCache[analysisKey] = analysis;
+            }
+        }
+
+        FinishPreviewSongAnalysis(requestKey);
+    }
+
+    private void FinishPreviewSongAnalysis(string requestKey)
+    {
+        if (previewSongAnalysisKey == requestKey)
+        {
+            previewSongAnalysisKey = null;
+            previewSongAnalysisRoutine = null;
+        }
+    }
+
+    private void UpdateSongPreviewPlayback()
+    {
+        if (!songSelectionVisible
+            || isLoadingScreenVisible
+            || isLoadingLocalSong
+            || isRequestingMurekaSong
+            || isStartingMurekaBackend
+            || isMurekaPromptWindowVisible)
+        {
+            StopSongPreview();
+            return;
+        }
+
+        EnsureSelectedSongIndex();
+        if (selectedLocalSongIndex < 0 || selectedLocalSongIndex >= localSongs.Count)
+        {
+            StopSongPreview();
+            return;
+        }
+
+        LocalSongEntry song = localSongs[selectedLocalSongIndex];
+        if (song == null)
+        {
+            StopSongPreview();
+            return;
+        }
+
+        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        string requestKey = GetPreviewSongRequestKey(song, clip);
+        if (string.IsNullOrEmpty(requestKey))
+        {
+            StopSongPreview();
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(previewSongAudioKey) && previewSongAudioKey != requestKey)
+        {
+            StopSongPreview();
+        }
+
+        SongAnalysis analysis = GetSelectedSongPreviewAnalysis();
+        clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        if (clip == null || clip.loadState != AudioDataLoadState.Loaded || !IsAnalysisUsable(analysis))
+        {
+            return;
+        }
+
+        if (songPreviewSource != null
+            && songPreviewSource.isPlaying
+            && songPreviewSource.clip == clip
+            && previewSongAudioKey == requestKey)
+        {
+            if (previewSongLoopStartTime > 0f && songPreviewSource.time < previewSongLoopStartTime - 0.05f)
+            {
+                songPreviewSource.time = Mathf.Min(previewSongLoopStartTime, Mathf.Max(0f, clip.length - 0.15f));
+            }
+
+            return;
+        }
+
+        StartSongPreview(clip, analysis, requestKey);
+    }
+
+    private void StartSongPreview(AudioClip clip, SongAnalysis analysis, string requestKey)
+    {
+        if (songPreviewSource == null || clip == null)
+        {
+            return;
+        }
+
+        StopSongPreview();
+        songPreviewSource.clip = clip;
+        songPreviewSource.loop = true;
+        songPreviewSource.volume = SongPreviewVolume;
+        if (clip.length > 0.1f)
+        {
+            previewSongLoopStartTime = GetSongPreviewStartTime(clip, analysis);
+            songPreviewSource.time = previewSongLoopStartTime;
+        }
+        else
+        {
+            previewSongLoopStartTime = 0f;
+        }
+
+        songPreviewSource.Play();
+        previewSongAudioKey = requestKey;
+    }
+
+    private void StopSongPreview()
+    {
+        previewSongAudioKey = null;
+        previewSongLoopStartTime = 0f;
+        if (songPreviewSource == null)
+        {
+            return;
+        }
+
+        songPreviewSource.Stop();
+        songPreviewSource.clip = null;
+    }
+
+    private static float GetSongPreviewStartTime(AudioClip clip, SongAnalysis analysis)
+    {
+        if (clip == null || clip.length <= 0.2f)
+        {
+            return 0f;
+        }
+
+        float midpoint = clip.length * 0.5f;
+        float startTime = midpoint;
+        if (IsAnalysisUsable(analysis))
+        {
+            float searchRadius = Mathf.Min(SongPreviewPeakSearchSeconds, Mathf.Max(1f, clip.length * 0.22f));
+            startTime = FindPreviewHighlightTime(analysis, midpoint, searchRadius);
+            startTime -= Mathf.Clamp(analysis.BeatDuration, 0.25f, 0.9f) * 0.5f;
+        }
+
+        return Mathf.Clamp(startTime, 0f, Mathf.Max(0f, clip.length - 0.15f));
+    }
+
+    private float GetPreviewWaveformCenterTime(SongAnalysis analysis)
+    {
+        if (!IsAnalysisUsable(analysis))
+        {
+            return Time.unscaledTime;
+        }
+
+        float duration = Mathf.Max(0.001f, analysis.EnergyEnvelope.Length / analysis.EnvelopeRate);
+        if (songPreviewSource != null && songPreviewSource.isPlaying && songPreviewSource.clip != null)
+        {
+            return Mathf.Repeat(songPreviewSource.time, duration);
+        }
+
+        float scanSpeed = Mathf.Clamp(analysis.BeatDuration * 2.8f, 0.85f, 1.75f);
+        float cursorTime = Mathf.Repeat(Time.unscaledTime * scanSpeed, duration);
+        float peakRadius = Mathf.Clamp(analysis.BeatDuration * 1.25f, 0.38f, 1.25f);
+        return FindEnvelopePeakTimeLooped(analysis.OnsetStrength, analysis.EnvelopeRate, cursorTime, peakRadius);
     }
 
     private void DrawGameplayHud(float scale)
@@ -1272,9 +1612,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         chartFinished = false;
         judgementKind = JudgementKind.None;
         judgementVisibleUntil = 0f;
-        hasSelectedDifficultyForSong = false;
         songSelectionVisible = true;
-        murekaStatus = "Select a local song and difficulty to play.";
+        murekaStatus = "Select a local song to play. Difficulty: " + GetDifficultyPreset().Label + ".";
     }
 
     private void DrawMurekaControls(float scale)
@@ -1339,7 +1678,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             if (GUI.Button(new Rect(panelX, panelY, 118f * scale, 30f * scale), "SONGS"))
             {
-                hasSelectedDifficultyForSong = false;
                 songSelectionVisible = true;
             }
 
@@ -1485,13 +1823,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
                 if (keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)
                 {
-                    if (selectedLocalSongIndex >= 0 && hasSelectedDifficultyForSong)
+                    if (selectedLocalSongIndex >= 0)
                     {
                         PlayLocalSong(selectedLocalSongIndex);
-                    }
-                    else if (selectedLocalSongIndex >= 0)
-                    {
-                        murekaStatus = "Choose a difficulty before playing.";
                     }
                 }
             }
@@ -3305,6 +3639,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         musicSource.spatialBlend = 0f;
         musicSource.volume = 0.72f;
 
+        songPreviewSource = gameObject.AddComponent<AudioSource>();
+        songPreviewSource.playOnAwake = false;
+        songPreviewSource.loop = true;
+        songPreviewSource.spatialBlend = 0f;
+        songPreviewSource.volume = SongPreviewVolume;
+
         AudioSettings.GetDSPBufferSize(out int bufferLength, out int bufferCount);
         int outputRate = Mathf.Max(1, AudioSettings.outputSampleRate);
         audioVisualLatency = bufferLength * Mathf.Max(1, bufferCount - 1) / (double)outputRate;
@@ -3688,18 +4028,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        if (songSelectionVisible && !hasSelectedDifficultyForSong)
-        {
-            murekaStatus = "Choose a difficulty before playing.";
-            return;
-        }
-
         if (index < 0 || index >= localSongs.Count || localSongs[index] == null)
         {
             murekaStatus = "Selected local song could not be loaded.";
             return;
         }
 
+        StopSongPreview();
         StartCoroutine(PlayLocalSongRoutine(index));
     }
 
@@ -3844,10 +4179,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         bool changed = selectedDifficulty != difficulty;
         selectedDifficulty = difficulty;
-        if (songSelectionVisible)
-        {
-            hasSelectedDifficultyForSong = true;
-        }
 
         if (!changed && !songSelectionVisible)
         {
@@ -4018,6 +4349,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void ClearCurrentSong()
     {
         ResetPauseState();
+        StopSongPreview();
         if (musicSource != null)
         {
             musicSource.Stop();
@@ -4571,9 +4903,80 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         return bestIndex / rate;
     }
 
+    private static float FindEnvelopePeakTimeLooped(float[] envelope, float rate, float centerTime, float radiusSeconds)
+    {
+        if (envelope == null || envelope.Length == 0 || rate <= 0f)
+        {
+            return centerTime;
+        }
+
+        float duration = Mathf.Max(0.001f, envelope.Length / rate);
+        int center = Mathf.RoundToInt(Mathf.Repeat(centerTime, duration) * rate);
+        int radius = Mathf.Max(1, Mathf.RoundToInt(radiusSeconds * rate));
+        int bestIndex = Mathf.Clamp(center, 0, envelope.Length - 1);
+        float bestValue = float.MinValue;
+        for (int offset = -radius; offset <= radius; offset++)
+        {
+            int index = (center + offset) % envelope.Length;
+            if (index < 0)
+            {
+                index += envelope.Length;
+            }
+
+            if (envelope[index] > bestValue)
+            {
+                bestValue = envelope[index];
+                bestIndex = index;
+            }
+        }
+
+        return bestIndex / rate;
+    }
+
+    private static float FindPreviewHighlightTime(SongAnalysis analysis, float centerTime, float radiusSeconds)
+    {
+        if (!IsAnalysisUsable(analysis))
+        {
+            return centerTime;
+        }
+
+        int center = Mathf.RoundToInt(centerTime * analysis.EnvelopeRate);
+        int radius = Mathf.Max(1, Mathf.RoundToInt(radiusSeconds * analysis.EnvelopeRate));
+        int first = Mathf.Clamp(center - radius, 0, analysis.OnsetStrength.Length - 1);
+        int last = Mathf.Clamp(center + radius, first, analysis.OnsetStrength.Length - 1);
+        int bestIndex = Mathf.Clamp(center, first, last);
+        float bestScore = float.MinValue;
+        for (int i = first; i <= last; i++)
+        {
+            float onset = analysis.OnsetStrength[i];
+            float energy = i < analysis.EnergyEnvelope.Length ? analysis.EnergyEnvelope[i] : 0f;
+            float midpointBias = 1f - Mathf.Clamp01(Mathf.Abs(i - center) / (float)Mathf.Max(1, radius)) * 0.18f;
+            float score = (onset * 0.68f + energy * 0.32f) * midpointBias;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex / analysis.EnvelopeRate;
+    }
+
     private static float SampleEnvelope(float[] envelope, float rate, float time)
     {
         int index = Mathf.Clamp(Mathf.RoundToInt(time * rate), 0, envelope.Length - 1);
+        return envelope[index];
+    }
+
+    private static float SampleEnvelopeLooped(float[] envelope, float rate, float time)
+    {
+        if (envelope == null || envelope.Length == 0 || rate <= 0f)
+        {
+            return 0f;
+        }
+
+        float duration = Mathf.Max(0.001f, envelope.Length / rate);
+        int index = Mathf.Clamp(Mathf.RoundToInt(Mathf.Repeat(time, duration) * rate), 0, envelope.Length - 1);
         return envelope[index];
     }
 
@@ -4717,6 +5120,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
+        StopSongPreview();
         musicSource.Stop();
         musicSource.clip = currentSongClip;
         musicSource.PlayScheduled(songStartDspTime);
