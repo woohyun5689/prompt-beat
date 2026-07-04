@@ -6,6 +6,7 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Networking;
+using UnityEngine.SceneManagement;
 using Spine;
 using Spine.Unity;
 
@@ -413,9 +414,31 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private SkeletonDataAsset blueHitFxData;
     private SkeletonDataAsset redHitFxData;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void RegisterSceneLoadedHook()
+    {
+        SceneManager.sceneLoaded -= InstallOnSongSelectSceneLoaded;
+        SceneManager.sceneLoaded += InstallOnSongSelectSceneLoaded;
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallOnPlay()
     {
+        TryInstallOnSongSelectScene(SceneManager.GetActiveScene());
+    }
+
+    private static void InstallOnSongSelectSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        TryInstallOnSongSelectScene(scene);
+    }
+
+    private static void TryInstallOnSongSelectScene(Scene scene)
+    {
+        if (scene.name != "SampleScene")
+        {
+            return;
+        }
+
         if (FindFirstObjectByType<RhythmGamePrototype>() != null)
         {
             return;
