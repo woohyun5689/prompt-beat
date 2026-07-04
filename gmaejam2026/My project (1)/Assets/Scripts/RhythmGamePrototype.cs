@@ -2195,11 +2195,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         GUI.color = hudColor;
 
-        // Life bar above the heart, in the same frame language as the song
-        // progress bar. Colored by remaining health and throbbing when low.
+        // Life bar in the top-left corner, in the same frame language as the
+        // song progress bar. Colored by remaining health, throbbing when low,
+        // dropping in from above with the rest of the HUD.
         Rect healthRect = new Rect(
-            22f * scale - (1f - EaseOutCubic(heartIntro)) * 170f * scale,
-            heartRect.y - 34f * scale,
+            22f * scale,
+            46f * scale - (1f - EaseOutCubic(heartIntro)) * 110f * scale,
             210f * scale,
             13f * scale);
         bool lowHealth = displayedHealth < 0.28f && notes.Count > 0 && !chartFinished;
