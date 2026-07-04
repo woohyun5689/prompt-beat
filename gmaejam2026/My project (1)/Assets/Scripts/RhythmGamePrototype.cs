@@ -444,6 +444,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private int missCount;
     private float displayedHeartFill;
     private float currentHealth;
+    private float displayedHealth;
     private bool chartFailed;
     private float displayedColorRecovery;
     private JudgementKind judgementKind = JudgementKind.None;
@@ -2178,16 +2179,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         heartRect = ScaleRectAroundCenter(heartRect, Mathf.LerpUnclamped(0.30f, 1f, EaseOutBackStrong(heartIntro)));
         Color hudColor = GUI.color;
         GUI.color = new Color(1f, 1f, 1f, hudColor.a * Mathf.Clamp01(heartIntro * 2.6f));
-
-        // Low health: the heart throbs red so danger reads at a glance.
-        bool lowHealth = displayedHeartFill < 0.28f && notes.Count > 0 && !chartFinished;
-        if (lowHealth)
-        {
-            float panic = (Mathf.Sin(Time.unscaledTime * 11f) + 1f) * 0.5f;
-            heartRect = ScaleRectAroundCenter(heartRect, 1f + panic * 0.09f);
-            GUI.color = new Color(1f, Mathf.Lerp(0.45f, 1f, panic), Mathf.Lerp(0.45f, 1f, panic), GUI.color.a);
-        }
-
         DrawUiSheetRegion(heartRect, 851, 606, 552, 527);
 
         if (displayedHeartFill > 0.001f)
@@ -2202,6 +2193,38 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawUiSheetRegionBottomFill(filledHeartRect, 1465, 685, 400, 386, displayedHeartFill);
         }
 
+        GUI.color = hudColor;
+
+        // Life bar above the heart, in the same frame language as the song
+        // progress bar. Colored by remaining health and throbbing when low.
+        Rect healthRect = new Rect(
+            22f * scale - (1f - EaseOutCubic(heartIntro)) * 170f * scale,
+            heartRect.y - 34f * scale,
+            210f * scale,
+            13f * scale);
+        bool lowHealth = displayedHealth < 0.28f && notes.Count > 0 && !chartFinished;
+        float healthPulse = lowHealth ? (Mathf.Sin(Time.unscaledTime * 11f) + 1f) * 0.5f : 0f;
+        GUI.color = new Color(1f, 1f, 1f, hudColor.a * Mathf.Clamp01(heartIntro * 2.6f));
+        DrawRect(
+            new Rect(healthRect.x - 3f * scale, healthRect.y - 3f * scale, healthRect.width + 6f * scale, healthRect.height + 6f * scale),
+            new Color(0.16f, 0.035f, 0.28f, 0.92f));
+        DrawRect(healthRect, new Color(0.22f, 0.08f, 0.38f, 0.9f));
+        Color healthColor = displayedHealth > 0.5f
+            ? Color.Lerp(new Color(1f, 0.85f, 0.28f, 1f), new Color(0.36f, 1f, 0.55f, 1f), (displayedHealth - 0.5f) * 2f)
+            : Color.Lerp(new Color(1f, 0.16f, 0.30f, 1f), new Color(1f, 0.85f, 0.28f, 1f), displayedHealth * 2f);
+        if (lowHealth)
+        {
+            healthColor = Color.Lerp(healthColor, new Color(1f, 0.62f, 0.66f, 1f), healthPulse * 0.7f);
+        }
+
+        DrawRect(new Rect(healthRect.x, healthRect.y, healthRect.width * displayedHealth, healthRect.height), healthColor);
+        GUIStyle lifeLabelStyle = CreateSongSelectStyle(13f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
+        DrawOutlinedLabel(
+            new Rect(healthRect.x, healthRect.y - 22f * scale, 120f * scale, 20f * scale),
+            "LIFE",
+            lifeLabelStyle,
+            new Color(0.16f, 0.035f, 0.28f, 0.92f),
+            2f * scale);
         GUI.color = hudColor;
 
         float progressIntro = IntroProgress(introTime, 0.24f, 0.52f);
@@ -3727,19 +3750,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private float GetHeartFill()
     {
-        // The heart is the player's life: misses drain it, clean hits refill
-        // it, and the world's color recovery follows it — playing badly drains
-        // the color back out of the world.
-        return notes.Count > 0 ? Mathf.Clamp01(currentHealth) : 0f;
+        return notes.Count > 0 ? Mathf.Clamp01(successfulHitCount / (float)notes.Count) : 0f;
     }
 
     private void UpdateHeartAndWorldColor()
     {
         float targetHeartFill = GetHeartFill();
         ApplyCharacterSkinForHeart(targetHeartFill);
-        // Damage registers fast, recovery fills gently.
-        float fillSpeed = targetHeartFill < displayedHeartFill ? 3.2f : 1.6f;
-        displayedHeartFill = Mathf.MoveTowards(displayedHeartFill, targetHeartFill, Time.unscaledDeltaTime * fillSpeed);
+        displayedHeartFill = Mathf.MoveTowards(displayedHeartFill, targetHeartFill, Time.unscaledDeltaTime * 1.6f);
+
+        // The health bar reacts on its own clock: damage registers fast,
+        // recovery fills gently.
+        float healthSpeed = currentHealth < displayedHealth ? 3.2f : 1.2f;
+        displayedHealth = Mathf.MoveTowards(displayedHealth, Mathf.Clamp01(currentHealth), Time.unscaledDeltaTime * healthSpeed);
 
         float targetColorRecovery = Mathf.Clamp01(targetHeartFill / 0.70f);
         displayedColorRecovery = targetColorRecovery >= 0.999f
@@ -3846,6 +3869,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         score = 0;
         combo = 0;
         currentHealth = HealthStart;
+        displayedHealth = HealthStart;
         chartFailed = false;
         successfulHitCount = 0;
         ResetResultStats();
