@@ -408,6 +408,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private float songSelectBackdropDrop;
     private float songCarouselOffset;
     private float songCarouselVelocity;
+    private float songSelectIntroStartTime = -1f;
     private bool chartFinished;
     private float lastMurekaBackendStartAttempt = -999f;
     private int score;
@@ -437,6 +438,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Texture2D resultGoodTexture;
     private Texture2D resultMissTexture;
     private Texture2D resultBackButtonTexture;
+    private Texture2D resultBackgroundTexture;
+    private Texture2D resultSpotlightTexture;
+    private Texture2D resultLightPoolTexture;
+    private Texture2D resultFrameTexture;
+    private SkeletonAnimation resultCharacter;
+    private Camera resultCharacterCamera;
+    private RenderTexture resultCharacterTexture;
+    private GameObject resultCharacterRoot;
     private GUIStyle titleStyle;
     private GUIStyle numberStyle;
     private GUIStyle comboNumberStyle;
@@ -519,6 +528,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         ReadInput();
         UpdateSongSelectWorldVisibility();
+        if (!resultScreenVisible && resultCharacterRoot != null)
+        {
+            ReleaseResultCharacter();
+        }
+
         UpdateSongSelectCamera();
         UpdateSongCarousel();
         UpdateSongPreviewPlayback();
@@ -538,6 +552,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void OnDestroy()
     {
         StopSongPreview();
+        ReleaseResultCharacter();
 
         if (generatedSongClip != null)
         {
@@ -665,6 +680,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return new Rect(centerX - width * fit * 0.5f, offsetY + y * fit, width * fit, height * fit);
         }
 
+        // Staggered entrance: each section eases in on its own delay after the
+        // screen first appears (title drop, card pop, panel rise, button rise).
+        if (songSelectIntroStartTime < 0f)
+        {
+            songSelectIntroStartTime = Time.unscaledTime;
+        }
+
+        float introTime = Time.unscaledTime - songSelectIntroStartTime;
+        float IntroP(float delay)
+        {
+            return Mathf.Clamp01((introTime - delay) / 0.34f);
+        }
+
+        Rect IntroRise(Rect rect, float delay)
+        {
+            rect.y += (1f - EaseOutBack(IntroP(delay))) * 220f * fit;
+            return rect;
+        }
+
         DrawSongSelectBackdrop(new Rect(0f, 0f, Screen.width, Screen.height));
 
         GUIStyle titleTextStyle = CreateSongSelectStyle(52f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(1f, 0.93f, 0.16f, 1f));
@@ -674,6 +708,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         promptTextStyle.wordWrap = true;
         GUIStyle statusStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.84f, 0.95f, 1f, 0.86f));
 
+        Matrix4x4 introTitleMatrix = GUI.matrix;
+        GUI.matrix = Matrix4x4.Translate(new Vector3(0f, (EaseOutBack(IntroP(0f)) - 1f) * 220f * fit, 0f)) * GUI.matrix;
         if (uiSelectMusicTitle != null)
         {
             GUI.DrawTexture(R(536f, 0f, 600f, 84f), uiSelectMusicTitle, ScaleMode.StretchToFill);
@@ -687,13 +723,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawFloatingNote(R(520f, 14f, 26f, 48f), new Color(0.98f, 0.34f, 1f, 1f));
         }
 
+        GUI.matrix = introTitleMatrix;
+
         bool hasSongs = localSongs.Count > 0;
         string selectedSongName = GetDisplaySongTitle(GetLocalSongName(selectedLocalSongIndex));
 
-        DrawSongCarousel(stretchX, offsetY, fit, hasSongs, uiScale);
+        DrawSongCarousel(stretchX, offsetY, fit, hasSongs, uiScale, IntroP(0.08f), IntroP(0.16f));
 
         bool previousEnabled = GUI.enabled;
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && localSongs.Count > 1 && !isLoadingLocalSong;
+        Color introArrowColor = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, introArrowColor.a * Mathf.Clamp01(IntroP(0.16f) * 2f));
         if (DrawCircleButton(R(54f, 394f, 102f, 102f), "<", uiScale, true))
         {
             PlayUiClickSound();
@@ -706,7 +746,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             SelectSongOffset(1);
         }
 
+        GUI.color = introArrowColor;
         GUI.enabled = previousEnabled;
+
+        float introInfoP = IntroP(0.24f);
+        Matrix4x4 introInfoMatrix = GUI.matrix;
+        Color introInfoColor = GUI.color;
+        GUI.matrix = Matrix4x4.Translate(new Vector3(0f, (1f - EaseOutCubic(introInfoP)) * 160f * fit, 0f)) * GUI.matrix;
+        GUI.color = new Color(1f, 1f, 1f, introInfoColor.a * Mathf.Clamp01(introInfoP * 1.8f));
 
         Rect infoRect = R(352f, 598f, 982f, 206f);
         SongAnalysis previewAnalysis = GetSelectedSongPreviewAnalysis();
@@ -726,8 +773,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             GUI.Label(R(550f, 674f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
             GUI.Label(R(552f, 712f, 510f, 58f), infoDescription, promptTextStyle);
             DrawEqualizer(R(986f, 620f, 288f, 58f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
-            // The dark pill baked into the panel art hosts the BPM readout.
-            GUI.Label(R(1094f, 714f, 186f, 54f), previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+            // The dark pill baked into the panel art hosts the BPM readout;
+            // anchoring to the panel rect keeps the label on the pill (which
+            // sits at 86%, 71% of the art) at any aspect ratio.
+            Rect bpmRect = new Rect(
+                infoRect.x + infoRect.width * 0.760f,
+                infoRect.y + infoRect.height * 0.568f,
+                infoRect.width * 0.20f,
+                infoRect.height * 0.28f);
+            GUI.Label(bpmRect, previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
         }
         else
         {
@@ -738,17 +792,26 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             GUI.Label(R(538f, 690f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
             GUI.Label(R(540f, 732f, 565f, 58f), infoDescription, promptTextStyle);
             DrawEqualizer(R(992f, 636f, 270f, 42f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
-            DrawNeonPanel(R(1115f, 730f, 158f, 46f), new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
-            GUI.Label(R(1128f, 731f, 130f, 44f), previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+            Rect bpmRect = new Rect(
+                infoRect.x + infoRect.width * 0.760f,
+                infoRect.y + infoRect.height * 0.568f,
+                infoRect.width * 0.20f,
+                infoRect.height * 0.28f);
+            DrawNeonPanel(bpmRect, new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
+            GUI.Label(bpmRect, previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
         }
 
-        // Bottom row: generate on the far left, difficulty centered, PLAY on the right.
-        DrawSongSelectDifficultyButton(R(504f, 812f, 212f, 112f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
-        DrawSongSelectDifficultyButton(R(730f, 812f, 212f, 112f), RhythmDifficulty.Normal, new Color(0.08f, 0.74f, 0.25f, 1f), uiScale);
-        DrawSongSelectDifficultyButton(R(956f, 812f, 212f, 112f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
+        GUI.matrix = introInfoMatrix;
+        GUI.color = introInfoColor;
+
+        // Bottom row: generate on the far left, difficulty centered, PLAY on
+        // the right, each hopping up from below the screen in order.
+        DrawSongSelectDifficultyButton(IntroRise(R(504f, 812f, 212f, 112f), 0.36f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
+        DrawSongSelectDifficultyButton(IntroRise(R(730f, 812f, 212f, 112f), 0.40f), RhythmDifficulty.Normal, new Color(0.08f, 0.74f, 0.25f, 1f), uiScale);
+        DrawSongSelectDifficultyButton(IntroRise(R(956f, 812f, 212f, 112f), 0.44f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
 
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
-        if (DrawArcadeButton(R(24f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale, uiSongGenButton))
+        if (DrawArcadeButton(IntroRise(R(24f, 812f, 292f, 112f), 0.32f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale, uiSongGenButton))
         {
             PlayUiClickSound();
             isMurekaPromptWindowVisible = true;
@@ -757,7 +820,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && !isLoadingLocalSong;
-        if (DrawArcadeButton(R(1340f, 812f, 316f, 112f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale, uiPlayButton))
+        if (DrawArcadeButton(IntroRise(R(1340f, 812f, 316f, 112f), 0.48f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale, uiPlayButton))
         {
             PlayUiClickSound();
             PlayLocalSong(selectedLocalSongIndex);
@@ -821,13 +884,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             (Screen.height - panelHeight) * 0.5f,
             panelWidth,
             panelHeight);
-        DrawNeonPanel(panelRect, new Color(0.025f, 0.025f, 0.18f, 0.98f), new Color(0.90f, 0.18f, 1f, 0.94f), scale);
+        DrawRoundedNeonPanel(panelRect, new Color(0.025f, 0.025f, 0.18f, 0.98f), new Color(0.90f, 0.18f, 1f, 0.94f), scale);
 
         GUIStyle titleStyle = CreateSongSelectStyle(32f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
         GUIStyle statusStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.86f, 0.95f, 1f, 0.88f));
         GUI.Label(new Rect(panelRect.x + 34f * scale, panelRect.y + 22f * scale, panelRect.width - 92f * scale, 46f * scale), "A.I 노래 생성", titleStyle);
 
-        if (GUI.Button(new Rect(panelRect.xMax - 58f * scale, panelRect.y + 22f * scale, 32f * scale, 32f * scale), "X"))
+        EnsurePauseUiTextures();
+        // return.png source is 103x82; keep its aspect for the close button.
+        Rect closeRect = new Rect(panelRect.xMax - 82f * scale, panelRect.y + 20f * scale, 52f * scale, 52f * 82f / 103f * scale);
+        if (uiPauseReturn != null)
+        {
+            GUI.DrawTexture(closeRect, uiPauseReturn, ScaleMode.StretchToFill);
+            if (GUI.Button(closeRect, GUIContent.none, GUIStyle.none))
+            {
+                CloseMurekaPromptWindow();
+                return;
+            }
+        }
+        else if (GUI.Button(new Rect(panelRect.xMax - 58f * scale, panelRect.y + 22f * scale, 32f * scale, 32f * scale), "X"))
         {
             CloseMurekaPromptWindow();
             return;
@@ -855,8 +930,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         bool previousEnabled = GUI.enabled;
         GUI.enabled = previousEnabled && !isRequestingMurekaSong && !isStartingMurekaBackend;
 
-        Rect serverButtonRect = new Rect(panelRect.x + 34f * scale, panelRect.yMax - 78f * scale, 196f * scale, 52f * scale);
-        if (DrawPauseMenuButton(serverButtonRect, "서버 확인", new Color(0.08f, 0.45f, 1f, 1f), new Color(0.16f, 0.95f, 1f, 1f), scale))
+        // Sized to the arcade button textures' aspect (song_gen 292x112, play 316x112).
+        Rect serverButtonRect = new Rect(panelRect.x + 34f * scale, panelRect.yMax - 92f * scale, 188f * scale, 72f * scale);
+        if (DrawArcadeButton(serverButtonRect, "서버 확인", new Color(0.08f, 0.45f, 1f, 1f), new Color(0.16f, 0.95f, 1f, 1f), scale, uiSongGenButton))
         {
             GUI.FocusControl(string.Empty);
             isEditingPrompt = false;
@@ -864,8 +940,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             StartMurekaBackendOnly();
         }
 
-        Rect generateButtonRect = new Rect(serverButtonRect.xMax + 18f * scale, serverButtonRect.y, 220f * scale, serverButtonRect.height);
-        if (DrawPauseMenuButton(generateButtonRect, "노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.96f, 0.24f, 1f, 1f), scale))
+        Rect generateButtonRect = new Rect(serverButtonRect.xMax + 18f * scale, serverButtonRect.y, 203f * scale, serverButtonRect.height);
+        if (DrawArcadeButton(generateButtonRect, "노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.96f, 0.24f, 1f, 1f), scale, uiPlayButton))
         {
             GUI.FocusControl(string.Empty);
             isEditingPrompt = false;
@@ -911,6 +987,31 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawRect(new Rect(rect.x + 4f * scale, rect.y + 4f * scale, rect.width - 8f * scale, rect.height - 8f * scale), new Color(border.r, border.g, border.b, border.a * alpha));
         DrawRect(new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale), new Color(fill.r, fill.g, fill.b, fill.a * alpha));
         DrawRect(new Rect(rect.x + 14f * scale, rect.y + 14f * scale, rect.width - 28f * scale, 3f * scale), new Color(1f, 1f, 1f, 0.25f * alpha));
+    }
+
+    private static float EaseOutBack(float t)
+    {
+        // Overshoots the target slightly before settling, for a bouncy pop.
+        const float c1 = 1.70158f;
+        const float c3 = c1 + 1f;
+        t -= 1f;
+        return 1f + c3 * t * t * t + c1 * t * t;
+    }
+
+    private static float EaseOutCubic(float t)
+    {
+        t = 1f - t;
+        return 1f - t * t * t;
+    }
+
+    private static void DrawRoundedNeonPanel(Rect rect, Color fill, Color border, float scale)
+    {
+        float radius = 26f * scale;
+        GUI.DrawTexture(rect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, new Color(border.r, border.g, border.b, 0.24f), 0f, radius);
+        Rect borderRect = new Rect(rect.x + 4f * scale, rect.y + 4f * scale, rect.width - 8f * scale, rect.height - 8f * scale);
+        GUI.DrawTexture(borderRect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, border, 0f, Mathf.Max(1f, radius - 4f * scale));
+        Rect fillRect = new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale);
+        GUI.DrawTexture(fillRect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, fill, 0f, Mathf.Max(1f, radius - 9f * scale));
     }
 
     // Reference-space layout anchors for carousel slots -2..+2.
@@ -1011,7 +1112,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
     }
 
-    private void DrawSongCarousel(float stretchX, float offsetY, float fit, bool hasSongs, float uiScale)
+    private void DrawSongCarousel(float stretchX, float offsetY, float fit, bool hasSongs, float uiScale, float introCenterP = 1f, float introSideP = 1f)
     {
         float animOffset = songCarouselOffset;
         List<int> slots = new List<int> { -2, -1, 0, 1, 2 };
@@ -1050,6 +1151,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             Color accent = SongCardAccents[songIndex < 0 ? 0 : songIndex % SongCardAccents.Length];
             float centerX = (x + width * 0.5f) * stretchX;
             Rect rect = new Rect(centerX - width * fit * 0.5f, offsetY + y * fit, width * fit, height * fit);
+
+            // Entrance: the focused card pops up from small, the side cards
+            // slide in from beyond the screen edges.
+            if (slot == 0 && introCenterP < 1f)
+            {
+                float pop = Mathf.LerpUnclamped(0.35f, 1f, EaseOutBack(introCenterP));
+                rect = new Rect(
+                    rect.center.x - rect.width * pop * 0.5f,
+                    rect.center.y - rect.height * pop * 0.5f,
+                    rect.width * pop,
+                    rect.height * pop);
+                alpha *= Mathf.Clamp01(introCenterP * 2.5f);
+            }
+            else if (slot != 0 && introSideP < 1f)
+            {
+                rect.x += Mathf.Sign(slot) * (1f - EaseOutBack(introSideP)) * 430f * fit;
+                alpha *= Mathf.Clamp01(introSideP * 2.5f);
+            }
+
             DrawSongCard(rect, songName, accent, selection, alpha, uiScale);
         }
     }
@@ -1109,9 +1229,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         // regenerates dynamic-font glyphs every frame, and the atlas rebuild makes
         // every label on screen flicker with garbled overlaps mid-slide.
         GUIStyle style = CreateSongSelectStyle(44f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
-        Rect selectedLabelRect = new Rect(rect.x + 42f * scale, rect.yMax - 130f * scale, rect.width - 84f * scale, 76f * scale);
-        Rect unselectedLabelRect = new Rect(rect.x + 20f * scale, rect.yMax - 74f * scale, rect.width - 40f * scale, 46f * scale);
-        Rect labelRect = LerpRect(unselectedLabelRect, selectedLabelRect, selection);
+        // The title band baked into the card art sits below the star divider;
+        // fractions of the card rect keep the text centered in that band for
+        // every card size instead of drifting with the clamped ui scale.
+        Rect labelRect = new Rect(
+            rect.x + rect.width * 0.09f,
+            rect.y + rect.height * 0.68f,
+            rect.width * 0.82f,
+            rect.height * 0.20f);
         float textScale = Mathf.Lerp(21f / 44f, 1f, selection);
         Rect textRect = new Rect(
             labelRect.center.x - labelRect.width / textScale * 0.5f,
@@ -1125,15 +1250,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawOutlinedLabel(textRect, songName, style, new Color(0.16f, 0.04f, 0.34f, 1f), 2.4f * scale);
         GUI.matrix = previousMatrix;
         GUI.color = previousGuiColor;
-    }
-
-    private static Rect LerpRect(Rect a, Rect b, float t)
-    {
-        return new Rect(
-            Mathf.Lerp(a.x, b.x, t),
-            Mathf.Lerp(a.y, b.y, t),
-            Mathf.Lerp(a.width, b.width, t),
-            Mathf.Lerp(a.height, b.height, t));
     }
 
     private static void DrawFloatingNote(Rect rect, Color color)
@@ -1358,7 +1474,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         StopSongPreview();
         // Keep the cards visually in place, then let the spring ease them into
         // their new slots so browsing feels like sliding a shelf of albums.
-        songCarouselOffset = Mathf.Clamp(songCarouselOffset + offset, -2.2f, 2.2f);
+        // Cards render at (slot - offset), so holding a card still after the
+        // index shifts by +1 needs the anim offset to jump by -1.
+        songCarouselOffset = Mathf.Clamp(songCarouselOffset - offset, -2.2f, 2.2f);
         generatedSongLabel = GetLocalSongName(selectedLocalSongIndex);
         generatedSongProvider = "LOCAL";
         generatedSongWarning = string.Empty;
@@ -1743,8 +1861,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUIStyle progressLabelStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
         Rect progressNameRect = new Rect(progressX - 118f * scale, progressY - 11f * scale, 104f * scale, 34f * scale);
         Rect progressPercentRect = new Rect(progressX + progressWidth + 14f * scale, progressY - 11f * scale, 74f * scale, 34f * scale);
-        GUI.Label(progressNameRect, "곡 진행도", progressLabelStyle);
-        GUI.Label(progressPercentRect, Mathf.RoundToInt(progress * 100f) + "%", progressLabelStyle);
+        Color progressOutline = new Color(0.16f, 0.035f, 0.28f, 0.92f);
+        DrawOutlinedLabel(progressNameRect, "곡 진행도", progressLabelStyle, progressOutline, 2f * scale);
+        DrawOutlinedLabel(progressPercentRect, Mathf.RoundToInt(progress * 100f) + "%", progressLabelStyle, progressOutline, 2f * scale);
     }
 
     private static void EnsurePauseUiTextures()
@@ -1924,39 +2043,70 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         DrawResultScoreBackdrop(new Rect(0f, 0f, Screen.width, Screen.height), fit);
 
-        Rect panelRect = R(860f, 118f, 900f, 800f);
-        DrawNeonPanel(panelRect, new Color(0.80f, 0.60f, 1f, 0.46f), new Color(1f, 1f, 1f, 0.82f), fit, 1f);
-        DrawNeonPanel(R(912f, 182f, 796f, 682f), new Color(0.95f, 0.80f, 1f, 0.18f), new Color(1f, 1f, 1f, 0.68f), fit, 0.78f);
+        if (resultCharacterTexture != null)
+        {
+            // Win (rank B~S) or lose (rank D~C) animation rendered through its
+            // own camera, placed where the reference sheet puts the character.
+            GUI.DrawTexture(R(75f, 235f, 565f, 745f), resultCharacterTexture, ScaleMode.StretchToFill, true);
+        }
 
-        GUIStyle title = CreateSongSelectStyle(48f, fit, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
-        DrawOutlinedLabel(R(980f, 120f, 600f, 74f), "FINAL SCORE", title, new Color(0.58f, 0.08f, 0.86f, 0.95f), 3f * fit);
+        if (resultLightPoolTexture != null)
+        {
+            // Spotlight pool on the floor beneath the score board.
+            DrawResultTexture(resultLightPoolTexture, R(830f, 908f, 960f, 98f), WhiteColor);
+        }
 
+        if (resultFrameTexture != null)
+        {
+            // Frame texture is 1102x946; width fits the aspect against the 800-tall panel.
+            DrawResultTexture(resultFrameTexture, R(844f, 118f, 932f, 800f), WhiteColor);
+        }
+        else
+        {
+            Rect panelRect = R(860f, 118f, 900f, 800f);
+            DrawNeonPanel(panelRect, new Color(0.80f, 0.60f, 1f, 0.46f), new Color(1f, 1f, 1f, 0.82f), fit, 1f);
+            DrawNeonPanel(R(912f, 182f, 796f, 682f), new Color(0.95f, 0.80f, 1f, 0.18f), new Color(1f, 1f, 1f, 0.68f), fit, 0.78f);
+        }
+
+        // The frame art carries thick glow padding: with the frame drawn at
+        // R(844,118,932,800) its double border encloses roughly x 1007-1639,
+        // y 256-780, so all content must stay inside that window.
         Texture2D rankTexture = GetResultRankTexture(CalculateResultRank());
-        DrawResultTexture(rankTexture, R(1190f, 220f, 330f, 260f), WhiteColor);
+        DrawResultTexture(rankTexture, R(1210f, 272f, 226f, 196f), WhiteColor);
 
-        float rowY = 512f;
-        DrawResultCountRow(R(1048f, rowY, 254f, 74f), R(1374f, rowY - 4f, 250f, 82f), resultComboTexture, GetResultComboCount(), fit, 62f);
-        DrawResultCountRow(R(1062f, rowY + 108f, 242f, 54f), R(1386f, rowY + 96f, 230f, 72f), resultPerfectTexture, perfectCount, fit, 48f);
-        DrawResultCountRow(R(1062f, rowY + 164f, 210f, 54f), R(1386f, rowY + 152f, 230f, 72f), resultGreatTexture, greatCount, fit, 48f);
-        DrawResultCountRow(R(1062f, rowY + 220f, 172f, 54f), R(1386f, rowY + 208f, 230f, 72f), resultGoodTexture, goodCount, fit, 48f);
-        DrawResultCountRow(R(1062f, rowY + 276f, 172f, 54f), R(1386f, rowY + 264f, 230f, 72f), resultMissTexture, missCount, fit, 48f);
+        // Labels share the x=1064 column (left-aligned art) and numbers share
+        // the x=1590 right edge (right-aligned text).
+        float rowY = 492f;
+        DrawResultCountRow(R(1064f, rowY, 240f, 62f), R(1360f, rowY - 6f, 230f, 70f), resultComboTexture, GetResultComboCount(), fit, 52f);
+        DrawResultCountRow(R(1064f, rowY + 86f, 220f, 46f), R(1380f, rowY + 78f, 210f, 60f), resultPerfectTexture, perfectCount, fit, 40f);
+        DrawResultCountRow(R(1064f, rowY + 134f, 220f, 46f), R(1380f, rowY + 126f, 210f, 60f), resultGreatTexture, greatCount, fit, 40f);
+        DrawResultCountRow(R(1064f, rowY + 182f, 220f, 46f), R(1380f, rowY + 174f, 210f, 60f), resultGoodTexture, goodCount, fit, 40f);
+        DrawResultCountRow(R(1064f, rowY + 230f, 220f, 46f), R(1380f, rowY + 222f, 210f, 60f), resultMissTexture, missCount, fit, 40f);
 
-        GUIStyle songStyle = CreateSongSelectStyle(24f, fit, TextAnchor.MiddleCenter, FontStyle.Bold, new Color(0.92f, 0.96f, 1f, 0.94f));
-        GUI.Label(R(930f, 836f, 760f, 44f), GetDisplaySongTitle(generatedSongLabel), songStyle);
+        // Song title rests in the spotlight pool under the board.
+        GUIStyle songStyle = CreateSongSelectStyle(26f, fit, TextAnchor.MiddleCenter, FontStyle.Bold, new Color(0.46f, 0.20f, 0.58f, 0.95f));
+        GUI.Label(R(920f, 926f, 800f, 52f), GetDisplaySongTitle(generatedSongLabel), songStyle);
 
-        if (DrawPauseMenuButton(R(1040f, 930f, 300f, 82f), "REPLAY", new Color(0.52f, 0.12f, 0.92f, 1f), new Color(1f, 0.26f, 0.95f, 1f), fit))
+        // Reference layout keeps icon-only controls: replay arrow bottom-right,
+        // return-to-song-select arrow bottom-left (same icon as the pause board).
+        if (DrawResultBackButton(R(1748f, 900f, 128f, 128f)))
         {
             PlayUiClickSound();
             ReplayCurrentSongFromResult();
         }
 
-        if (DrawPauseMenuButton(R(1388f, 930f, 330f, 82f), "SONG SELECT", new Color(0.08f, 0.68f, 0.28f, 1f), new Color(0.58f, 1f, 0.42f, 1f), fit))
+        EnsurePauseUiTextures();
+        Rect songSelectRect = R(56f, 924f, 128f, 128f * 82f / 103f);
+        if (uiPauseReturn != null)
         {
-            PlayUiClickSound();
-            ReturnToSongSelectionFromResult();
+            GUI.DrawTexture(songSelectRect, uiPauseReturn, ScaleMode.ScaleToFit);
+            if (GUI.Button(songSelectRect, GUIContent.none, GUIStyle.none))
+            {
+                PlayUiClickSound();
+                ReturnToSongSelectionFromResult();
+            }
         }
-
-        if (DrawResultBackButton(R(1748f, 900f, 128f, 128f)))
+        else if (DrawPauseMenuButton(R(56f, 930f, 330f, 82f), "SONG SELECT", new Color(0.08f, 0.68f, 0.28f, 1f), new Color(0.58f, 1f, 0.42f, 1f), fit))
         {
             PlayUiClickSound();
             ReturnToSongSelectionFromResult();
@@ -1984,6 +2134,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawResultScoreBackdrop(Rect rect, float scale)
     {
+        if (resultBackgroundTexture != null)
+        {
+            GUI.DrawTexture(rect, resultBackgroundTexture, ScaleMode.StretchToFill);
+            if (resultSpotlightTexture != null)
+            {
+                GUI.DrawTexture(rect, resultSpotlightTexture, ScaleMode.StretchToFill);
+            }
+
+            return;
+        }
+
         DrawRect(rect, new Color(0.34f, 0.10f, 0.74f, 1f));
         DrawRect(new Rect(rect.x, rect.y, rect.width, rect.height * 0.48f), new Color(0.52f, 0.22f, 1f, 0.58f));
         DrawRect(new Rect(rect.x, rect.y + rect.height * 0.54f, rect.width, rect.height * 0.46f), new Color(1f, 0.58f, 0.94f, 0.34f));
@@ -1997,8 +2158,30 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawResultCountRow(Rect labelRect, Rect numberRect, Texture2D labelTexture, int value, float scale, float numberSize)
     {
-        DrawResultTexture(labelTexture, labelRect, WhiteColor);
+        DrawResultTextureLeftAligned(labelTexture, labelRect, WhiteColor);
         DrawResultNumber(numberRect, value, scale, numberSize);
+    }
+
+    private static void DrawResultTextureLeftAligned(Texture2D texture, Rect rect, Color color)
+    {
+        if (texture == null)
+        {
+            return;
+        }
+
+        // ScaleToFit centers inside the rect, which makes short words start at
+        // different x positions; anchor the fitted texture to the left edge so
+        // every label lines up on the same column.
+        float fitScale = Mathf.Min(rect.width / texture.width, rect.height / texture.height);
+        Rect drawRect = new Rect(
+            rect.x,
+            rect.center.y - texture.height * fitScale * 0.5f,
+            texture.width * fitScale,
+            texture.height * fitScale);
+        Color previous = GUI.color;
+        GUI.color = color;
+        GUI.DrawTexture(drawRect, texture, ScaleMode.StretchToFill, true);
+        GUI.color = previous;
     }
 
     private static void DrawResultTexture(Texture2D texture, Rect rect, Color color)
@@ -2016,7 +2199,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawResultNumber(Rect rect, int value, float scale, float size)
     {
-        GUIStyle style = CreateSongSelectStyle(size, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        GUIStyle style = CreateSongSelectStyle(size, scale, TextAnchor.MiddleRight, FontStyle.Bold, WhiteColor);
         string text = FormatResultNumber(value);
         DrawOutlinedLabel(rect, text, style, new Color(0.92f, 0.16f, 1f, 0.92f), 2.4f * scale);
     }
@@ -2038,6 +2221,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         ResetPauseState();
         resultScreenVisible = true;
+        SetupResultCharacter();
         judgementKind = JudgementKind.None;
         judgementVisibleUntil = 0f;
         if (musicSource != null)
@@ -2064,6 +2248,86 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         resultScreenVisible = false;
         ReturnToSongSelectionFromPause();
+    }
+
+    private void SetupResultCharacter()
+    {
+        ReleaseResultCharacter();
+
+        bool win = CalculateResultRank() >= ResultRank.B;
+        SkeletonDataAsset[] dataAssets = Resources.LoadAll<SkeletonDataAsset>(win ? "Spine/WinAnim" : "Spine/LoseAnim");
+        if (dataAssets == null || dataAssets.Length == 0)
+        {
+            return;
+        }
+
+        SkeletonDataAsset dataAsset = dataAssets[0];
+        SkeletonData skeletonData = dataAsset.GetSkeletonData(true);
+        if (skeletonData == null)
+        {
+            return;
+        }
+
+        // The result screen is pure IMGUI, which always draws over the world,
+        // so the character is staged far below the play field and rendered
+        // through its own camera into a texture the GUI can composite.
+        resultCharacterRoot = new GameObject("Result Character Stage");
+        resultCharacterRoot.transform.position = new Vector3(0f, -500f, 0f);
+
+        resultCharacter = SkeletonAnimation.NewSkeletonAnimationGameObject(dataAsset);
+        resultCharacter.name = "Result Character";
+        resultCharacter.transform.SetParent(resultCharacterRoot.transform, false);
+        resultCharacter.Initialize(false);
+        if (skeletonData.Animations.Count > 0)
+        {
+            resultCharacter.AnimationState.SetAnimation(0, skeletonData.Animations.Items[0].Name, true);
+        }
+
+        float dataScale = Mathf.Max(0.0001f, dataAsset.scale);
+        float boundsCenterX = (skeletonData.X + skeletonData.Width * 0.5f) * dataScale;
+        float boundsCenterY = (skeletonData.Y + skeletonData.Height * 0.5f) * dataScale;
+
+        resultCharacterTexture = new RenderTexture(672, 888, 0, RenderTextureFormat.ARGB32);
+
+        GameObject cameraObject = new GameObject("Result Character Camera");
+        cameraObject.transform.SetParent(resultCharacterRoot.transform, false);
+        cameraObject.transform.localPosition = new Vector3(boundsCenterX, boundsCenterY, -10f);
+        resultCharacterCamera = cameraObject.AddComponent<Camera>();
+        resultCharacterCamera.orthographic = true;
+        resultCharacterCamera.clearFlags = CameraClearFlags.SolidColor;
+        resultCharacterCamera.backgroundColor = new Color(0f, 0f, 0f, 0f);
+        resultCharacterCamera.nearClipPlane = 0.3f;
+        resultCharacterCamera.farClipPlane = 100f;
+        resultCharacterCamera.targetTexture = resultCharacterTexture;
+        // Frame the setup-pose bounds with a little margin in the 672x888 view.
+        float viewAspect = 672f / 888f;
+        resultCharacterCamera.orthographicSize = Mathf.Max(
+            skeletonData.Height * dataScale * 0.525f,
+            skeletonData.Width * dataScale * 0.525f / viewAspect);
+    }
+
+    private void ReleaseResultCharacter()
+    {
+        if (resultCharacterCamera != null)
+        {
+            resultCharacterCamera.targetTexture = null;
+        }
+
+        if (resultCharacterTexture != null)
+        {
+            resultCharacterTexture.Release();
+            Destroy(resultCharacterTexture);
+            resultCharacterTexture = null;
+        }
+
+        if (resultCharacterRoot != null)
+        {
+            Destroy(resultCharacterRoot);
+            resultCharacterRoot = null;
+        }
+
+        resultCharacter = null;
+        resultCharacterCamera = null;
     }
 
     private void RegisterResultJudgement(JudgementKind kind)
@@ -2280,6 +2544,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         judgementVisibleUntil = 0f;
         ResetResultStats();
         songSelectionVisible = true;
+        songSelectIntroStartTime = Time.unscaledTime;
         murekaStatus = "Select a local song to play. Difficulty: " + GetDifficultyPreset().Label + ".";
     }
 
@@ -2346,6 +2611,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             if (GUI.Button(new Rect(panelX, panelY, 118f * scale, 30f * scale), "SONGS"))
             {
                 songSelectionVisible = true;
+                songSelectIntroStartTime = Time.unscaledTime;
             }
 
             DrawDifficultyButtons(panelX + 128f * scale, panelY, 250f * scale, 30f * scale, scale);
@@ -5916,7 +6182,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         resultGoodTexture = Resources.Load<Texture2D>("Score/good");
         resultMissTexture = Resources.Load<Texture2D>("Score/miss");
         resultBackButtonTexture = Resources.Load<Texture2D>("Score/back");
+        resultBackgroundTexture = Resources.Load<Texture2D>("Score/result_bg");
+        resultSpotlightTexture = Resources.Load<Texture2D>("Score/result_spotlight");
+        resultLightPoolTexture = Resources.Load<Texture2D>("Score/result_light_pool");
+        resultFrameTexture = Resources.Load<Texture2D>("Score/result_frame");
 
+        ConfigureJudgementTexture(resultBackgroundTexture);
+        ConfigureJudgementTexture(resultSpotlightTexture);
+        ConfigureJudgementTexture(resultLightPoolTexture);
+        ConfigureJudgementTexture(resultFrameTexture);
         ConfigureJudgementTexture(resultRankSTexture);
         ConfigureJudgementTexture(resultRankATexture);
         ConfigureJudgementTexture(resultRankBTexture);
