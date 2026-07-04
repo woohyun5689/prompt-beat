@@ -283,7 +283,7 @@ public static class TitleScreenBuilder
         serializedController.FindProperty("startReactionDuration").floatValue = 0.72f;
         serializedController.FindProperty("startFlashMaxAlpha").floatValue = 0.34f;
         serializedController.FindProperty("startLogoPunchScale").floatValue = 0.085f;
-        serializedController.FindProperty("startBurstParticleRatio").floatValue = 0.48f;
+        serializedController.FindProperty("startBurstParticleRatio").floatValue = 0.22f;
         serializedController.FindProperty("useSkyStarParticles").boolValue = true;
         serializedController.FindProperty("skyStarParticleCount").intValue = 36;
         serializedController.FindProperty("skyStarSizeRange").vector2Value = new Vector2(14f, 54f);
@@ -291,13 +291,13 @@ public static class TitleScreenBuilder
         serializedController.FindProperty("skyStarTwinkleSpeed").floatValue = 1.65f;
         serializedController.FindProperty("useLogoBurstParticles").boolValue = true;
         serializedController.FindProperty("logoParticleMaterial").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Material>(LogoSparkleMaterialPath);
-        serializedController.FindProperty("logoBurstParticleCount").intValue = 650;
-        serializedController.FindProperty("logoBurstEllipse").vector2Value = new Vector2(360f, 130f);
-        serializedController.FindProperty("logoBurstExpandAmount").floatValue = 300f;
+        serializedController.FindProperty("logoBurstParticleCount").intValue = 115;
+        serializedController.FindProperty("logoBurstEllipse").vector2Value = new Vector2(300f, 100f);
+        serializedController.FindProperty("logoBurstExpandAmount").floatValue = 140f;
         serializedController.FindProperty("logoBurstLifetimeRange").vector2Value = new Vector2(6.2f, 9.2f);
         serializedController.FindProperty("logoBurstSpawnDelayRange").vector2Value = new Vector2(0f, 0.03f);
         serializedController.FindProperty("logoBurstAlpha").floatValue = 1f;
-        serializedController.FindProperty("logoBurstSize").floatValue = 420f;
+        serializedController.FindProperty("logoBurstSize").floatValue = 17f;
         serializedController.ApplyModifiedPropertiesWithoutUndo();
 
         return controller;

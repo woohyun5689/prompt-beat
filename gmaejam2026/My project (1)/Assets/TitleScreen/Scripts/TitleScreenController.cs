@@ -44,7 +44,7 @@ public sealed class TitleScreenController : MonoBehaviour
     [SerializeField] private float startReactionDuration = 0.72f;
     [SerializeField] private float startFlashMaxAlpha = 0.34f;
     [SerializeField] private float startLogoPunchScale = 0.085f;
-    [SerializeField] private float startBurstParticleRatio = 0.48f;
+    [SerializeField] private float startBurstParticleRatio = 0.22f;
 
     [Header("Sky Star Particles")]
     [SerializeField] private bool useSkyStarParticles = true;
@@ -56,13 +56,13 @@ public sealed class TitleScreenController : MonoBehaviour
     [Header("Logo Burst Particles")]
     [SerializeField] private bool useLogoBurstParticles = true;
     [SerializeField] private Material logoParticleMaterial;
-    [SerializeField] private int logoBurstParticleCount = 650;
-    [SerializeField] private Vector2 logoBurstEllipse = new Vector2(360f, 130f);
-    [SerializeField] private float logoBurstExpandAmount = 300f;
+    [SerializeField] private int logoBurstParticleCount = 115;
+    [SerializeField] private Vector2 logoBurstEllipse = new Vector2(300f, 100f);
+    [SerializeField] private float logoBurstExpandAmount = 140f;
     [SerializeField] private Vector2 logoBurstLifetimeRange = new Vector2(6.2f, 9.2f);
     [SerializeField] private Vector2 logoBurstSpawnDelayRange = new Vector2(0f, 0.03f);
     [SerializeField] private float logoBurstAlpha = 1f;
-    [SerializeField] private float logoBurstSize = 420f;
+    [SerializeField] private float logoBurstSize = 17f;
 
     private Vector2 backgroundStartPosition;
     private Vector3 backgroundStartScale = Vector3.one;
