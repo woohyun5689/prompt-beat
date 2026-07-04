@@ -315,6 +315,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Texture2D uiPlayButton;
     private static Texture2D uiSongGenButton;
     private static Texture2D uiSongExpPanel;
+    private static Texture2D uiPauseStop;
+    private static Texture2D uiPauseTitle;
+    private static Texture2D uiPauseBoard;
+    private static Texture2D uiPauseReturn;
+    private static Texture2D uiPauseRedo;
+    private static Texture2D uiPauseGoing;
     private static Sprite[] redTapSprites;
     private static Sprite[] blueTapSprites;
     private static Sprite redLongSprite;
@@ -1605,18 +1611,45 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.Label(progressPercentRect, Mathf.RoundToInt(progress * 100f) + "%", progressLabelStyle);
     }
 
+    private static void EnsurePauseUiTextures()
+    {
+        // Retried while the board is missing so a late import gets picked up;
+        // draw sites fall back to the procedural look until then.
+        if (uiPauseBoard != null)
+        {
+            return;
+        }
+
+        uiPauseStop = Resources.Load<Texture2D>("UI/Pause/stop");
+        uiPauseTitle = Resources.Load<Texture2D>("UI/Pause/PAUSE");
+        uiPauseBoard = Resources.Load<Texture2D>("UI/Pause/pause_board");
+        uiPauseReturn = Resources.Load<Texture2D>("UI/Pause/return");
+        uiPauseRedo = Resources.Load<Texture2D>("UI/Pause/redo");
+        uiPauseGoing = Resources.Load<Texture2D>("UI/Pause/going");
+    }
+
     private void DrawPauseButton(float scale)
     {
-        Rect rect = new Rect(Screen.width - 66f * scale, 15f * scale, 48f * scale, 44f * scale);
-        DrawNeonPanel(rect, new Color(0.02f, 0.05f, 0.22f, 0.82f), new Color(0.96f, 0.72f, 0.12f, 0.92f), scale);
+        EnsurePauseUiTextures();
+        Rect rect;
+        if (uiPauseStop != null)
+        {
+            rect = new Rect(Screen.width - 70f * scale, 13f * scale, 54f * scale, 54f * scale);
+            GUI.DrawTexture(rect, uiPauseStop, ScaleMode.StretchToFill);
+        }
+        else
+        {
+            rect = new Rect(Screen.width - 66f * scale, 15f * scale, 48f * scale, 44f * scale);
+            DrawNeonPanel(rect, new Color(0.02f, 0.05f, 0.22f, 0.82f), new Color(0.96f, 0.72f, 0.12f, 0.92f), scale);
 
-        float barWidth = 8f * scale;
-        float barHeight = 24f * scale;
-        float gap = 8f * scale;
-        float y = rect.y + (rect.height - barHeight) * 0.5f;
-        float x = rect.x + (rect.width - barWidth * 2f - gap) * 0.5f;
-        DrawRect(new Rect(x, y, barWidth, barHeight), WhiteColor);
-        DrawRect(new Rect(x + barWidth + gap, y, barWidth, barHeight), WhiteColor);
+            float barWidth = 8f * scale;
+            float barHeight = 24f * scale;
+            float gap = 8f * scale;
+            float y = rect.y + (rect.height - barHeight) * 0.5f;
+            float x = rect.x + (rect.width - barWidth * 2f - gap) * 0.5f;
+            DrawRect(new Rect(x, y, barWidth, barHeight), WhiteColor);
+            DrawRect(new Rect(x + barWidth + gap, y, barWidth, barHeight), WhiteColor);
+        }
 
         if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
         {
@@ -1626,7 +1659,48 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawPauseMenu(float scale)
     {
-        DrawRect(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.58f));
+        EnsurePauseUiTextures();
+        DrawRect(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0.30f, 0.05f, 0.27f, 0.62f));
+
+        if (uiPauseBoard != null)
+        {
+            float boardWidth = Mathf.Min(560f * scale, Screen.width - 80f * scale);
+            float boardHeight = boardWidth * 191f / 629f;
+            Rect boardRect = new Rect(
+                (Screen.width - boardWidth) * 0.5f,
+                Screen.height * 0.5f - boardHeight * 0.42f,
+                boardWidth,
+                boardHeight);
+
+            if (uiPauseTitle != null)
+            {
+                float titleWidth = 300f * scale;
+                float titleHeight = titleWidth * 108f / 296f;
+                GUI.DrawTexture(
+                    new Rect((Screen.width - titleWidth) * 0.5f, boardRect.y - titleHeight - 16f * scale, titleWidth, titleHeight),
+                    uiPauseTitle,
+                    ScaleMode.StretchToFill);
+            }
+
+            GUI.DrawTexture(boardRect, uiPauseBoard, ScaleMode.StretchToFill);
+
+            if (DrawPauseIconButton(boardRect, 0.192f, uiPauseReturn, 92f, 103f, 82f, scale))
+            {
+                ReturnToSongSelectionFromPause();
+            }
+
+            if (DrawPauseIconButton(boardRect, 0.5f, uiPauseRedo, 84f, 107f, 96f, scale))
+            {
+                ReplayCurrentSongFromPause();
+            }
+
+            if (DrawPauseIconButton(boardRect, 0.842f, uiPauseGoing, 64f, 69f, 74f, scale))
+            {
+                ResumeGame();
+            }
+
+            return;
+        }
 
         float panelWidth = Mathf.Min(520f * scale, Screen.width - 60f * scale);
         float panelHeight = 384f * scale;
@@ -1658,6 +1732,36 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             ReturnToSongSelectionFromPause();
         }
+    }
+
+    private bool DrawPauseIconButton(
+        Rect boardRect,
+        float relativeCenterX,
+        Texture2D icon,
+        float width,
+        float sourceWidth,
+        float sourceHeight,
+        float scale)
+    {
+        float iconWidth = width * scale;
+        float iconHeight = iconWidth * sourceHeight / sourceWidth;
+        Rect rect = new Rect(
+            boardRect.x + boardRect.width * relativeCenterX - iconWidth * 0.5f,
+            boardRect.center.y - iconHeight * 0.5f,
+            iconWidth,
+            iconHeight);
+        if (icon != null)
+        {
+            GUI.DrawTexture(rect, icon, ScaleMode.StretchToFill);
+        }
+
+        // Generous hit area around the neon icon.
+        Rect hitRect = new Rect(
+            rect.x - 20f * scale,
+            rect.y - 20f * scale,
+            rect.width + 40f * scale,
+            rect.height + 40f * scale);
+        return GUI.Button(hitRect, GUIContent.none, GUIStyle.none);
     }
 
     private bool DrawPauseMenuButton(Rect rect, string label, Color fill, Color highlight, float scale)
