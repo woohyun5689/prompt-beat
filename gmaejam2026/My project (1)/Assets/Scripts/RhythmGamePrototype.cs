@@ -173,6 +173,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float TapMissInputWindow = 0.58f;
     private const float WheelMissInputWindow = 0.68f;
     private const float MissWindow = 0.42f;
+    private const float HealthStart = 0.45f;
+    private const float HealthMissDrain = 0.085f;
+    private const float HealthPerfectGain = 0.022f;
+    private const float HealthGreatGain = 0.015f;
+    private const float HealthGoodGain = 0.009f;
     private const float AutoFollowLookAhead = 1.85f;
     private const float AutoFollowSpeed = 12f;
     private const float MinTapNoteGap = 0.38f;
@@ -438,6 +443,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private int goodCount;
     private int missCount;
     private float displayedHeartFill;
+    private float currentHealth;
+    private bool chartFailed;
     private float displayedColorRecovery;
     private JudgementKind judgementKind = JudgementKind.None;
     private float judgementVisibleUntil;
@@ -2171,6 +2178,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         heartRect = ScaleRectAroundCenter(heartRect, Mathf.LerpUnclamped(0.30f, 1f, EaseOutBackStrong(heartIntro)));
         Color hudColor = GUI.color;
         GUI.color = new Color(1f, 1f, 1f, hudColor.a * Mathf.Clamp01(heartIntro * 2.6f));
+
+        // Low health: the heart throbs red so danger reads at a glance.
+        bool lowHealth = displayedHeartFill < 0.28f && notes.Count > 0 && !chartFinished;
+        if (lowHealth)
+        {
+            float panic = (Mathf.Sin(Time.unscaledTime * 11f) + 1f) * 0.5f;
+            heartRect = ScaleRectAroundCenter(heartRect, 1f + panic * 0.09f);
+            GUI.color = new Color(1f, Mathf.Lerp(0.45f, 1f, panic), Mathf.Lerp(0.45f, 1f, panic), GUI.color.a);
+        }
+
         DrawUiSheetRegion(heartRect, 851, 606, 552, 527);
 
         if (displayedHeartFill > 0.001f)
@@ -2777,6 +2794,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private ResultRank CalculateResultRank()
     {
+        // Running out of health is always a loss, no matter how clean the
+        // hits were before the heart emptied.
+        if (chartFailed)
+        {
+            return ResultRank.D;
+        }
+
         int total = GetResultTotalCount();
         if (total <= 0)
         {
@@ -3387,6 +3411,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         bestCombo = Mathf.Max(bestCombo, combo);
         score += points + combo * 12;
         successfulHitCount++;
+        float healthGain = judgement == JudgementKind.Perfect
+            ? HealthPerfectGain
+            : judgement == JudgementKind.Great ? HealthGreatGain : HealthGoodGain;
+        currentHealth = Mathf.Min(1f, currentHealth + healthGain);
         RegisterResultJudgement(judgement);
         note.Judged = true;
         PlayHitFeedback(note);
@@ -3404,11 +3432,35 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void ApplyMiss(Note note)
     {
         combo = 0;
+        currentHealth -= HealthMissDrain;
         RegisterResultJudgement(JudgementKind.Miss);
         note.Judged = true;
         PlayCharacterMissReaction();
         FlashJudgement(JudgementKind.Miss);
         ClearNote(note);
+        if (currentHealth <= 0f && !chartFinished && !resultScreenVisible)
+        {
+            FailChart();
+        }
+    }
+
+    private void FailChart()
+    {
+        currentHealth = 0f;
+        chartFailed = true;
+        chartFinished = true;
+        for (int i = 0; i < notes.Count; i++)
+        {
+            Note remaining = notes[i];
+            if (!remaining.Judged)
+            {
+                remaining.Judged = true;
+                ClearNote(remaining);
+            }
+        }
+
+        ShowResultScoreScene();
+        murekaStatus = "Failed — the heart ran out. Rank: " + CalculateResultRank() + ".";
     }
 
     private void ClearNote(Note note)
@@ -3675,14 +3727,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private float GetHeartFill()
     {
-        return notes.Count > 0 ? Mathf.Clamp01(successfulHitCount / (float)notes.Count) : 0f;
+        // The heart is the player's life: misses drain it, clean hits refill
+        // it, and the world's color recovery follows it — playing badly drains
+        // the color back out of the world.
+        return notes.Count > 0 ? Mathf.Clamp01(currentHealth) : 0f;
     }
 
     private void UpdateHeartAndWorldColor()
     {
         float targetHeartFill = GetHeartFill();
         ApplyCharacterSkinForHeart(targetHeartFill);
-        displayedHeartFill = Mathf.MoveTowards(displayedHeartFill, targetHeartFill, Time.unscaledDeltaTime * 1.6f);
+        // Damage registers fast, recovery fills gently.
+        float fillSpeed = targetHeartFill < displayedHeartFill ? 3.2f : 1.6f;
+        displayedHeartFill = Mathf.MoveTowards(displayedHeartFill, targetHeartFill, Time.unscaledDeltaTime * fillSpeed);
 
         float targetColorRecovery = Mathf.Clamp01(targetHeartFill / 0.70f);
         displayedColorRecovery = targetColorRecovery >= 0.999f
@@ -3788,6 +3845,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         lastWheelSignalTime = -999f;
         score = 0;
         combo = 0;
+        currentHealth = HealthStart;
+        chartFailed = false;
         successfulHitCount = 0;
         ResetResultStats();
         displayedHeartFill = 0f;
