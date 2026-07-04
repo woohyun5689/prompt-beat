@@ -360,6 +360,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool isEditingPrompt;
     private RhythmDifficulty selectedDifficulty = RhythmDifficulty.Normal;
     private bool songSelectionVisible = true;
+    private bool isGamePaused;
+    private double pauseStartedDspTime;
+    private float pausedSongElapsed;
     private bool chartFinished;
     private float lastMurekaBackendStartAttempt = -999f;
     private int score;
@@ -432,6 +435,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void Update()
     {
         ReadInput();
+        if (isGamePaused)
+        {
+            return;
+        }
+
         UpdateNotes();
         UpdateJudgeRing();
         UpdateCameraShake();
@@ -512,6 +520,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         DrawGameplayHud(scale);
+        if (!isGamePaused)
+        {
+            DrawPauseButton(scale);
+        }
+        else
+        {
+            DrawPauseMenu(scale);
+        }
     }
 
     private void DrawSongSelectScene(float scale)
@@ -813,7 +829,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float progress = 0f;
         if (currentSongClip != null && currentSongClip.length > 0.01f)
         {
-            progress = Mathf.Clamp01((float)(AudioSettings.dspTime - songStartDspTime) / currentSongClip.length);
+            progress = Mathf.Clamp01(GetSongElapsedSeconds() / currentSongClip.length);
         }
 
         DrawRect(new Rect(progressX - 3f * scale, progressY - 3f * scale, progressWidth + 6f * scale, progressHeight + 6f * scale), new Color(0.16f, 0.035f, 0.28f, 0.92f));
@@ -821,8 +837,205 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawRect(new Rect(progressX, progressY, progressWidth * progress, progressHeight), new Color(1f, 0.25f, 0.82f, 1f));
 
         smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.82f);
-        GUI.Label(new Rect(Screen.width - 390f * scale, 16f * scale, 370f * scale, 26f * scale), generatedSongLabel + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
+        GUI.Label(new Rect(18f * scale, 16f * scale, 430f * scale, 26f * scale), generatedSongLabel + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
         GUI.Label(new Rect(126f * scale, Screen.height - 56f * scale, 180f * scale, 26f * scale), "BEST " + bestCombo + "x", smallStyle);
+
+        GUIStyle progressLabelStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        Rect progressNameRect = new Rect(progressX - 118f * scale, progressY - 11f * scale, 104f * scale, 34f * scale);
+        Rect progressPercentRect = new Rect(progressX + progressWidth + 14f * scale, progressY - 11f * scale, 74f * scale, 34f * scale);
+        DrawPanel(progressNameRect, new Color(0.02f, 0.02f, 0.05f, 0.72f));
+        DrawPanel(progressPercentRect, new Color(0.02f, 0.02f, 0.05f, 0.72f));
+        GUI.Label(progressNameRect, "곡 진행도", progressLabelStyle);
+        GUI.Label(progressPercentRect, Mathf.RoundToInt(progress * 100f) + "%", progressLabelStyle);
+    }
+
+    private void DrawPauseButton(float scale)
+    {
+        Rect rect = new Rect(Screen.width - 66f * scale, 15f * scale, 48f * scale, 44f * scale);
+        DrawNeonPanel(rect, new Color(0.02f, 0.05f, 0.22f, 0.82f), new Color(0.96f, 0.72f, 0.12f, 0.92f), scale);
+
+        float barWidth = 8f * scale;
+        float barHeight = 24f * scale;
+        float gap = 8f * scale;
+        float y = rect.y + (rect.height - barHeight) * 0.5f;
+        float x = rect.x + (rect.width - barWidth * 2f - gap) * 0.5f;
+        DrawRect(new Rect(x, y, barWidth, barHeight), WhiteColor);
+        DrawRect(new Rect(x + barWidth + gap, y, barWidth, barHeight), WhiteColor);
+
+        if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
+        {
+            PauseGame();
+        }
+    }
+
+    private void DrawPauseMenu(float scale)
+    {
+        DrawRect(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.58f));
+
+        float panelWidth = Mathf.Min(520f * scale, Screen.width - 60f * scale);
+        float panelHeight = 384f * scale;
+        Rect panelRect = new Rect(
+            (Screen.width - panelWidth) * 0.5f,
+            (Screen.height - panelHeight) * 0.5f,
+            panelWidth,
+            panelHeight);
+        DrawNeonPanel(panelRect, new Color(0.015f, 0.025f, 0.16f, 0.96f), new Color(0.7f, 0.9f, 1f, 0.9f), scale);
+
+        GUIStyle title = CreateSongSelectStyle(38f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        DrawOutlinedLabel(new Rect(panelRect.x, panelRect.y + 26f * scale, panelRect.width, 54f * scale), "일시정지", title, new Color(0.1f, 0f, 0.22f, 0.95f), 2.5f * scale);
+
+        float buttonWidth = panelWidth - 92f * scale;
+        float buttonHeight = 68f * scale;
+        float buttonX = panelRect.x + (panelWidth - buttonWidth) * 0.5f;
+        float firstY = panelRect.y + 104f * scale;
+        if (DrawPauseMenuButton(new Rect(buttonX, firstY, buttonWidth, buttonHeight), "계속 플레이", new Color(0.08f, 0.55f, 1f, 1f), new Color(0.18f, 0.95f, 1f, 1f), scale))
+        {
+            ResumeGame();
+        }
+
+        if (DrawPauseMenuButton(new Rect(buttonX, firstY + 88f * scale, buttonWidth, buttonHeight), "같은 노래 다시 플레이", new Color(0.55f, 0.15f, 0.94f, 1f), new Color(1f, 0.28f, 0.95f, 1f), scale))
+        {
+            ReplayCurrentSongFromPause();
+        }
+
+        if (DrawPauseMenuButton(new Rect(buttonX, firstY + 176f * scale, buttonWidth, buttonHeight), "노래 선택창으로 나가기", new Color(0.08f, 0.72f, 0.28f, 1f), new Color(0.62f, 1f, 0.42f, 1f), scale))
+        {
+            ReturnToSongSelectionFromPause();
+        }
+    }
+
+    private bool DrawPauseMenuButton(Rect rect, string label, Color fill, Color highlight, float scale)
+    {
+        DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, 0.95f), new Color(highlight.r, highlight.g, highlight.b, 0.92f), scale);
+        DrawRect(new Rect(rect.x + 12f * scale, rect.y + 9f * scale, rect.width - 24f * scale, rect.height * 0.22f), new Color(1f, 1f, 1f, 0.20f));
+        GUIStyle style = CreateSongSelectStyle(26f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        DrawOutlinedLabel(rect, label, style, new Color(0f, 0f, 0.14f, 0.86f), 2f * scale);
+        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+    }
+
+    private float GetSongElapsedSeconds()
+    {
+        if (isGamePaused)
+        {
+            return Mathf.Max(0f, pausedSongElapsed);
+        }
+
+        return Mathf.Max(0f, (float)(AudioSettings.dspTime - songStartDspTime));
+    }
+
+    private void PauseGame()
+    {
+        if (isGamePaused || songSelectionVisible || isLoadingScreenVisible || currentSongClip == null)
+        {
+            return;
+        }
+
+        isGamePaused = true;
+        pauseStartedDspTime = AudioSettings.dspTime;
+        pausedSongElapsed = Mathf.Max(0f, (float)(pauseStartedDspTime - songStartDspTime));
+        if (musicSource != null)
+        {
+            musicSource.Stop();
+        }
+
+        if (hitSoundSource != null)
+        {
+            hitSoundSource.Stop();
+        }
+
+        if (longScratchSoundSource != null)
+        {
+            longScratchSoundSource.Stop();
+        }
+
+        murekaStatus = "Paused.";
+    }
+
+    private void ResumeGame()
+    {
+        if (!isGamePaused)
+        {
+            return;
+        }
+
+        double oldSongStartDspTime = songStartDspTime;
+        double now = AudioSettings.dspTime;
+        if (pausedSongElapsed > 0f)
+        {
+            songStartDspTime = now - pausedSongElapsed;
+        }
+        else
+        {
+            songStartDspTime += now - pauseStartedDspTime;
+        }
+
+        double hitTimeShift = songStartDspTime - oldSongStartDspTime;
+        for (int i = 0; i < notes.Count; i++)
+        {
+            notes[i].HitDspTime += hitTimeShift;
+        }
+
+        isGamePaused = false;
+        pauseStartedDspTime = 0d;
+        if (musicSource != null && currentSongClip != null)
+        {
+            musicSource.Stop();
+            musicSource.clip = currentSongClip;
+            if (pausedSongElapsed > 0f)
+            {
+                musicSource.time = Mathf.Min(pausedSongElapsed, Mathf.Max(0f, currentSongClip.length - 0.05f));
+                musicSource.Play();
+            }
+            else
+            {
+                musicSource.time = 0f;
+                musicSource.PlayScheduled(songStartDspTime);
+            }
+        }
+
+        pausedSongElapsed = 0f;
+        murekaStatus = "Resumed " + generatedSongLabel + ".";
+    }
+
+    private void ResetPauseState()
+    {
+        isGamePaused = false;
+        pauseStartedDspTime = 0d;
+        pausedSongElapsed = 0f;
+    }
+
+    private void ReplayCurrentSongFromPause()
+    {
+        ResetPauseState();
+        if (musicSource != null)
+        {
+            musicSource.Stop();
+        }
+
+        RestartChart();
+        murekaStatus = "Replaying " + generatedSongLabel + ".";
+    }
+
+    private void ReturnToSongSelectionFromPause()
+    {
+        ResetPauseState();
+        if (musicSource != null)
+        {
+            musicSource.Stop();
+        }
+
+        for (int i = 0; i < notes.Count; i++)
+        {
+            ClearNote(notes[i]);
+        }
+
+        notes.Clear();
+        combo = 0;
+        chartFinished = false;
+        judgementKind = JudgementKind.None;
+        judgementVisibleUntil = 0f;
+        songSelectionVisible = true;
+        murekaStatus = "Select a local song to play.";
     }
 
     private void DrawMurekaControls(float scale)
@@ -1023,8 +1236,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
+        if (isGamePaused)
+        {
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            {
+                ResumeGame();
+            }
+
+            return;
+        }
+
         if (keyboard != null)
         {
+            if (keyboard.escapeKey.wasPressedThisFrame)
+            {
+                PauseGame();
+                return;
+            }
+
             if (keyboard.qKey.wasPressedThisFrame)
             {
                 TryHit(NoteKind.GoodTap);
@@ -1258,6 +1487,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float elapsed = 0f;
         while (elapsed < LongNoteScratchDuration && root != null)
         {
+            if (isGamePaused)
+            {
+                yield return null;
+                continue;
+            }
+
             elapsed += Time.unscaledDeltaTime;
             float t = Mathf.Clamp01(elapsed / LongNoteScratchDuration);
             float eased = 1f - Mathf.Pow(1f - t, 3f);
@@ -1545,6 +1780,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void RestartChart()
     {
+        ResetPauseState();
         for (int i = 0; i < notes.Count; i++)
         {
             ClearNote(notes[i]);
@@ -3499,6 +3735,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void ClearCurrentSong()
     {
+        ResetPauseState();
         if (musicSource != null)
         {
             musicSource.Stop();
