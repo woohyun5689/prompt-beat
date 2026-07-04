@@ -204,7 +204,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const string MurekaProvider = "mureka_web_automation_imported";
     private const string MurekaBackendFolderName = "MurekaBackend";
     private const string MurekaBackendScriptName = "start_mureka_backend.ps1";
-    private const float MurekaBackendStartupTimeout = 45f;
+    private const float MurekaBackendStartupTimeout = 360f;
     private const string PromptControlName = "MurekaPromptField";
     private const string MusicResourcesPath = "Music";
     private const string PromptLaneMessage =
@@ -4979,7 +4979,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private IEnumerator StartMurekaBackendRoutine()
     {
         isStartingMurekaBackend = true;
-        murekaStatus = "Starting project MUREKA backend...";
+        murekaStatus = "Starting project MUREKA backend. First run may install dependencies...";
         bool backendReady = false;
         yield return EnsureMurekaBackendReady(value => backendReady = value);
         murekaStatus = backendReady
@@ -5115,7 +5115,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             yield break;
         }
 
-        murekaStatus = "Starting MUREKA website backend...";
+        murekaStatus = "Starting MUREKA website backend. First run may install dependencies...";
         float deadline = Time.realtimeSinceStartup + MurekaBackendStartupTimeout;
         while (Time.realtimeSinceStartup < deadline)
         {
@@ -5156,7 +5156,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             if (!ready)
             {
-                murekaStatus = "MUREKA backend needs setup. Run MurekaBackend/setup_mureka_backend.ps1.";
+                murekaStatus = "MUREKA backend is not ready yet. Unity will run project setup automatically.";
             }
 
             onDone(ready);

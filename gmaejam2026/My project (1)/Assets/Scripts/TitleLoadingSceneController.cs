@@ -6,7 +6,6 @@ using UnityEngine.SceneManagement;
 
 public sealed class TitleLoadingSceneController : MonoBehaviour
 {
-    private const string LoadingBackgroundResourcePath = "LoadingBackgrounds/loading_background";
     private const int LoadingEffectSortingOrder = 120;
 
     [SerializeField] private string nextSceneName = "SampleScene";
@@ -52,7 +51,6 @@ public sealed class TitleLoadingSceneController : MonoBehaviour
         float halfHeight = camera.orthographicSize;
         float halfWidth = halfHeight * camera.aspect;
 
-        CreateLoadingBackground(camera, halfWidth, halfHeight);
         CreateLoadingCenterEffect(camera);
 
         SkeletonDataAsset[] dataAssets = Resources.LoadAll<SkeletonDataAsset>("Spine/Character03");
@@ -107,33 +105,6 @@ public sealed class TitleLoadingSceneController : MonoBehaviour
         {
             loadingCharacter.AnimationState.SetAnimation(0, loadingAnimationName, true);
         }
-    }
-
-    private static void CreateLoadingBackground(Camera camera, float halfWidth, float halfHeight)
-    {
-        Texture2D backgroundTexture = Resources.Load<Texture2D>(LoadingBackgroundResourcePath);
-        if (backgroundTexture == null)
-        {
-            return;
-        }
-
-        Sprite backgroundSprite = Sprite.Create(
-            backgroundTexture,
-            new Rect(0f, 0f, backgroundTexture.width, backgroundTexture.height),
-            new Vector2(0.5f, 0.5f),
-            100f);
-
-        GameObject backgroundObject = new GameObject("Loading Background");
-        backgroundObject.transform.SetParent(camera.transform, false);
-        backgroundObject.transform.localPosition = new Vector3(0f, 0f, 10f);
-
-        SpriteRenderer renderer = backgroundObject.AddComponent<SpriteRenderer>();
-        renderer.sprite = backgroundSprite;
-        renderer.sortingOrder = -100;
-
-        Vector2 spriteSize = backgroundSprite.bounds.size;
-        float scale = Mathf.Max((halfWidth * 2f) / spriteSize.x, (halfHeight * 2f) / spriteSize.y);
-        backgroundObject.transform.localScale = Vector3.one * scale;
     }
 
     private void CreateLoadingCenterEffect(Camera camera)
