@@ -245,8 +245,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         WideLaneJumpChance = 0.08f,
         ColorSwitchChance = 0.30f,
         GoodNoteChance = 0.58f,
-        PeakSearchRadius = 0.17f,
-        PeakTimeInfluence = 1f
+        PeakSearchRadius = 0.06f,
+        PeakTimeInfluence = 0.35f
     };
     private static readonly DifficultyPreset NormalDifficulty = new DifficultyPreset
     {
@@ -272,8 +272,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         WideLaneJumpChance = 0.35f,
         ColorSwitchChance = 0.50f,
         GoodNoteChance = 0.55f,
-        PeakSearchRadius = 0.17f,
-        PeakTimeInfluence = 1f
+        PeakSearchRadius = 0.06f,
+        PeakTimeInfluence = 0.35f
     };
     private static readonly DifficultyPreset HardDifficulty = new DifficultyPreset
     {
@@ -5746,7 +5746,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
 
             float candidateBpm = 60f * envelopeRate / lag;
-            score *= Mathf.Lerp(0.96f, 1.04f, 1f - Mathf.Clamp01(Mathf.Abs(candidateBpm - 124f) / 60f));
+            // Mild mid-tempo prior only breaks ties between octave candidates; a
+            // stronger bias here drags the detected BPM away from the true tempo.
+            score *= Mathf.Lerp(0.99f, 1.01f, 1f - Mathf.Clamp01(Mathf.Abs(candidateBpm - 124f) / 60f));
             lagScores[lag] = score;
             if (score > bestScore)
             {
@@ -5786,7 +5788,143 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             analysis.BeatTimes.Add(time);
         }
 
+        RefineBeatGrid(analysis);
+
         onDone(analysis);
+    }
+
+    private static void RefineBeatGrid(SongAnalysis analysis)
+    {
+        int count = analysis.BeatTimes.Count;
+        if (count < 8 || analysis.OnsetStrength == null || analysis.OnsetStrength.Length == 0)
+        {
+            return;
+        }
+
+        // The autocorrelation yields one global BPM/phase, and even a fraction
+        // of a percent of tempo error accumulates into an audible offset by the
+        // middle of the song. Measure where strong onsets actually land near
+        // each beat, fit the accumulated offset as a linear function of beat
+        // index (i.e. a corrected tempo and phase), and apply it. Two passes so
+        // the second measurement runs on the already-straightened grid.
+        // Syncopated hits appear as outliers on both sides of the beat and are
+        // averaged away by the fit instead of dragging the grid off the beat.
+        for (int iteration = 0; iteration < 2; iteration++)
+        {
+            if (!TryFitBeatGridOffset(analysis, out float phaseError, out float periodError))
+            {
+                return;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                analysis.BeatTimes[i] += phaseError + periodError * i;
+            }
+
+            analysis.BeatOffset += phaseError;
+            analysis.BeatDuration += periodError;
+            analysis.Bpm = Mathf.Clamp(60f / analysis.BeatDuration, MinimumAnalyzedBpm, MaximumAnalyzedBpm);
+        }
+
+        ApplySmoothedBeatResiduals(analysis);
+    }
+
+    private static bool TryFitBeatGridOffset(SongAnalysis analysis, out float phaseError, out float periodError)
+    {
+        phaseError = 0f;
+        periodError = 0f;
+        int count = analysis.BeatTimes.Count;
+        float snapRadius = analysis.BeatDuration * 0.12f;
+        float drift = 0f;
+        double weightSum = 0.0;
+        double indexSum = 0.0;
+        double offsetSum = 0.0;
+        double indexSquaredSum = 0.0;
+        double indexOffsetSum = 0.0;
+        int sampleCount = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            // Track accumulated drift with a low gain so the search window stays
+            // centered on the onsets without trusting any single hit.
+            float expected = analysis.BeatTimes[i] + drift;
+            float peakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, expected, snapRadius);
+            float strength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, peakTime);
+            if (strength < 0.3f)
+            {
+                continue;
+            }
+
+            float offset = peakTime - analysis.BeatTimes[i];
+            drift += (peakTime - expected) * 0.25f;
+
+            double weight = strength;
+            weightSum += weight;
+            indexSum += weight * i;
+            offsetSum += weight * offset;
+            indexSquaredSum += weight * (double)i * i;
+            indexOffsetSum += weight * (double)i * offset;
+            sampleCount++;
+        }
+
+        if (sampleCount < 8 || sampleCount < count / 4)
+        {
+            return false;
+        }
+
+        double denominator = weightSum * indexSquaredSum - indexSum * indexSum;
+        if (Math.Abs(denominator) < 0.000001)
+        {
+            return false;
+        }
+
+        double slope = (weightSum * indexOffsetSum - indexSum * offsetSum) / denominator;
+        double intercept = (offsetSum - slope * indexSum) / weightSum;
+        float maximumPeriodError = analysis.BeatDuration * 0.02f;
+        periodError = Mathf.Clamp((float)slope, -maximumPeriodError, maximumPeriodError);
+        phaseError = Mathf.Clamp((float)intercept, -analysis.BeatDuration * 0.5f, analysis.BeatDuration * 0.5f);
+        return true;
+    }
+
+    private static void ApplySmoothedBeatResiduals(SongAnalysis analysis)
+    {
+        // After the linear fit, absorb slow local tempo wobble with a widely
+        // smoothed residual. The wide window means isolated syncopated onsets
+        // cannot pull an individual beat off the grid.
+        int count = analysis.BeatTimes.Count;
+        float snapRadius = Mathf.Min(analysis.BeatDuration * 0.12f, 0.05f);
+        float[] residuals = new float[count];
+        float[] weights = new float[count];
+        for (int i = 0; i < count; i++)
+        {
+            float beatTime = analysis.BeatTimes[i];
+            float peakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, beatTime, snapRadius);
+            float strength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, peakTime);
+            if (strength >= 0.3f)
+            {
+                residuals[i] = peakTime - beatTime;
+                weights[i] = strength;
+            }
+        }
+
+        const int smoothingWindow = 8;
+        for (int i = 0; i < count; i++)
+        {
+            float weightedTotal = 0f;
+            float weightTotal = 0f;
+            int first = Mathf.Max(0, i - smoothingWindow);
+            int last = Mathf.Min(count - 1, i + smoothingWindow);
+            for (int j = first; j <= last; j++)
+            {
+                weightedTotal += residuals[j] * weights[j];
+                weightTotal += weights[j];
+            }
+
+            if (weightTotal >= 1.5f)
+            {
+                analysis.BeatTimes[i] += Mathf.Clamp(weightedTotal / weightTotal, -snapRadius, snapRadius);
+            }
+        }
     }
 
     private static float[] NormalizeEnvelope(float[] source, float percentile)
@@ -5911,7 +6049,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             if (difficulty.AnalysisExtraNoteChance > 0f && beatInBar < BeatsPerBar - 1)
             {
-                float extraCenterTime = beatTime + analysis.BeatDuration * 0.5f;
+                float extraCenterTime = i + 1 < analysis.BeatTimes.Count
+                    ? (beatTime + analysis.BeatTimes[i + 1]) * 0.5f
+                    : beatTime + analysis.BeatDuration * 0.5f;
                 if (extraCenterTime <= finalPlayableTime)
                 {
                     float extraPeakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, extraCenterTime, searchRadius);
