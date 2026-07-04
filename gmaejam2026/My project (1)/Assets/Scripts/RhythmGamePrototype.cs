@@ -468,10 +468,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float scale = Mathf.Clamp(Screen.height / 720f, 0.72f, 1.35f);
         if (songSelectionVisible)
         {
-            DrawPanel(new Rect(18f * scale, 16f * scale, 210f * scale, 78f * scale), new Color(0.02f, 0.09f, 0.18f, 0.88f));
-            GUI.Label(new Rect(34f * scale, 24f * scale, 180f * scale, 25f * scale), "SCORE", titleStyle);
-            GUI.Label(new Rect(34f * scale, 48f * scale, 180f * scale, 42f * scale), score.ToString("000000"), numberStyle);
-            DrawLocalSongSelector(scale);
+            DrawSongSelectScene(scale);
+            return;
         }
 
         Rect comboNumberRect = new Rect((Screen.width - 300f * scale) * 0.5f, 30f * scale, 300f * scale, 76f * scale);
@@ -496,16 +494,281 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawMurekaControls(scale);
         }
 
-        if (songSelectionVisible)
+        DrawGameplayHud(scale);
+    }
+
+    private void DrawSongSelectScene(float scale)
+    {
+        EnsureSelectedSongIndex();
+
+        float referenceWidth = 1672f;
+        float referenceHeight = 941f;
+        float fit = Mathf.Min(Screen.width / referenceWidth, Screen.height / referenceHeight);
+        float offsetX = (Screen.width - referenceWidth * fit) * 0.5f;
+        float offsetY = (Screen.height - referenceHeight * fit) * 0.5f;
+        float uiScale = Mathf.Clamp(fit, 0.62f, 1.28f);
+
+        Rect R(float x, float y, float width, float height)
         {
-            smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.78f);
-            GUI.Label(new Rect(18f * scale, Screen.height - 64f * scale, 620f * scale, 28f * scale), murekaStatus, smallStyle);
-            GUI.Label(new Rect(18f * scale, Screen.height - 38f * scale, 620f * scale, 28f * scale), generatedSongLabel + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
+            return new Rect(offsetX + x * fit, offsetY + y * fit, width * fit, height * fit);
         }
-        else
+
+        DrawSongSelectBackdrop(R(0f, 0f, referenceWidth, referenceHeight));
+
+        GUIStyle titleTextStyle = CreateSongSelectStyle(52f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(1f, 0.93f, 0.16f, 1f));
+        GUIStyle infoTitleStyle = CreateSongSelectStyle(32f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
+        GUIStyle promptTitleStyle = CreateSongSelectStyle(22f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0f, 1f, 0.98f, 1f));
+        GUIStyle promptTextStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.UpperLeft, FontStyle.Bold, new Color(0.88f, 0.95f, 1f, 0.94f));
+        promptTextStyle.wordWrap = true;
+        GUIStyle statusStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.MiddleRight, FontStyle.Bold, new Color(0.84f, 0.95f, 1f, 0.86f));
+
+        Rect titleRect = R(14f, 18f, 555f, 100f);
+        DrawNeonPanel(titleRect, new Color(0.02f, 0.07f, 0.34f, 0.96f), new Color(0.12f, 0.92f, 1f, 0.82f), fit);
+        DrawOutlinedLabel(new Rect(titleRect.x + 34f * fit, titleRect.y + 5f * fit, titleRect.width - 70f * fit, titleRect.height - 10f * fit), "SONG SELECT", titleTextStyle, new Color(0.04f, 0.1f, 0.5f, 1f), 3f * uiScale);
+        DrawFloatingNote(R(468f, 45f, 25f, 46f), new Color(1f, 0.27f, 0.88f, 1f));
+        DrawFloatingNote(R(520f, 14f, 26f, 48f), new Color(0.98f, 0.34f, 1f, 1f));
+
+        bool hasSongs = localSongs.Count > 0;
+        string selectedSongName = GetLocalSongName(selectedLocalSongIndex);
+        string previousSongName = hasSongs ? GetLocalSongName(WrapSongIndex(selectedLocalSongIndex - 1)) : "NO SONG";
+        string nextSongName = hasSongs ? GetLocalSongName(WrapSongIndex(selectedLocalSongIndex + 1)) : "NO SONG";
+
+        DrawSongCard(R(196f, 310f, 260f, 224f), previousSongName, new Color(0f, 0.75f, 0.82f, 0.88f), false, uiScale);
+        DrawSongCard(R(1216f, 310f, 260f, 224f), nextSongName, new Color(0.05f, 0.30f, 0.95f, 0.86f), false, uiScale);
+        DrawSongCard(R(570f, 116f, 532f, 468f), hasSongs ? selectedSongName : "NO LOCAL SONG", new Color(0.46f, 0.12f, 0.96f, 0.95f), true, uiScale);
+
+        bool previousEnabled = GUI.enabled;
+        GUI.enabled = previousEnabled && hasSongs && localSongs.Count > 1 && !isLoadingLocalSong;
+        if (DrawCircleButton(R(54f, 392f, 106f, 106f), "<", uiScale))
         {
-            DrawGameplayHud(scale);
+            SelectSongOffset(-1);
         }
+
+        if (DrawCircleButton(R(1518f, 394f, 96f, 104f), ">", uiScale))
+        {
+            SelectSongOffset(1);
+        }
+
+        GUI.enabled = previousEnabled;
+
+        Rect infoRect = R(352f, 598f, 982f, 206f);
+        DrawNeonPanel(infoRect, new Color(0.015f, 0.035f, 0.14f, 0.96f), new Color(0.72f, 0.9f, 1f, 0.9f), fit);
+        DrawCircleIcon(R(398f, 642f, 112f, 112f), new Color(0.68f, 0.45f, 1f, 1f), fit);
+        GUI.Label(R(538f, 618f, 380f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
+        DrawRect(R(538f, 680f, 730f, 3f), new Color(0.48f, 0.24f, 1f, 0.56f));
+        GUI.Label(R(538f, 690f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
+        GUI.Label(
+            R(540f, 732f, 565f, 58f),
+            hasSongs
+                ? "로컬 음악 파일에서 BPM과 노트를 자동 분석합니다.\n선택한 난이도로 바로 게임을 시작합니다."
+                : "Assets/Resources/Music 폴더에 MP3 파일을 넣으면 이 화면에 표시됩니다.",
+            promptTextStyle);
+        DrawEqualizer(R(992f, 636f, 270f, 42f), fit);
+        DrawNeonPanel(R(1115f, 730f, 158f, 46f), new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
+        GUI.Label(R(1128f, 731f, 130f, 44f), generatedBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+
+        DrawSongSelectDifficultyButton(R(354f, 812f, 212f, 112f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
+        DrawSongSelectDifficultyButton(R(580f, 812f, 212f, 112f), RhythmDifficulty.Normal, new Color(0.08f, 0.74f, 0.25f, 1f), uiScale);
+        DrawSongSelectDifficultyButton(R(800f, 812f, 212f, 112f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
+
+        GUI.enabled = previousEnabled && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
+        if (DrawArcadeButton(R(1038f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale))
+        {
+            GenerateNewSong();
+        }
+
+        GUI.enabled = previousEnabled && hasSongs && !isLoadingLocalSong;
+        if (DrawArcadeButton(R(1340f, 812f, 316f, 112f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale))
+        {
+            PlayLocalSong(selectedLocalSongIndex);
+        }
+
+        GUI.enabled = previousEnabled;
+
+        string status = isLoadingLocalSong
+            ? "노래를 준비하는 중..."
+            : murekaStatus;
+        GUI.Label(R(916f, 42f, 600f, 36f), status, statusStyle);
+    }
+
+    private static GUIStyle CreateSongSelectStyle(float size, float scale, TextAnchor anchor, FontStyle fontStyle, Color color)
+    {
+        GUIStyle style = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = Mathf.RoundToInt(size * scale),
+            fontStyle = fontStyle,
+            alignment = anchor,
+            clipping = TextClipping.Clip
+        };
+        style.normal.textColor = color;
+        return style;
+    }
+
+    private static void DrawSongSelectBackdrop(Rect rect)
+    {
+        DrawRect(rect, new Color(0.02f, 0.18f, 0.58f, 0.18f));
+        DrawRect(new Rect(rect.x, rect.y + rect.height * 0.62f, rect.width, rect.height * 0.38f), new Color(0.37f, 0.07f, 0.78f, 0.16f));
+        DrawRect(new Rect(rect.x, rect.y + rect.height * 0.76f, rect.width, rect.height * 0.03f), new Color(0.10f, 0.95f, 1f, 0.18f));
+    }
+
+    private static void DrawNeonPanel(Rect rect, Color fill, Color border, float scale)
+    {
+        DrawRect(rect, new Color(border.r, border.g, border.b, 0.24f));
+        DrawRect(new Rect(rect.x + 4f * scale, rect.y + 4f * scale, rect.width - 8f * scale, rect.height - 8f * scale), border);
+        DrawRect(new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale), fill);
+        DrawRect(new Rect(rect.x + 14f * scale, rect.y + 14f * scale, rect.width - 28f * scale, 3f * scale), new Color(1f, 1f, 1f, 0.25f));
+    }
+
+    private void DrawSongCard(Rect rect, string songName, Color accent, bool selected, float scale)
+    {
+        Color fill = selected
+            ? new Color(accent.r * 0.45f, accent.g * 0.25f, accent.b * 0.72f, 0.96f)
+            : new Color(accent.r * 0.55f, accent.g * 0.45f, accent.b * 0.75f, 0.72f);
+        DrawNeonPanel(rect, fill, new Color(0.78f, 0.95f, 1f, selected ? 0.96f : 0.68f), scale);
+
+        Rect iconRect = new Rect(rect.center.x - rect.width * 0.16f, rect.y + rect.height * 0.15f, rect.width * 0.32f, rect.height * 0.32f);
+        DrawCircleIcon(iconRect, new Color(0.95f, 0.74f, 1f, selected ? 1f : 0.72f), scale);
+
+        GUIStyle style = CreateSongSelectStyle(selected ? 44f : 21f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        Rect labelRect = selected
+            ? new Rect(rect.x + 42f * scale, rect.yMax - 130f * scale, rect.width - 84f * scale, 76f * scale)
+            : new Rect(rect.x + 20f * scale, rect.yMax - 74f * scale, rect.width - 40f * scale, 46f * scale);
+        DrawOutlinedLabel(labelRect, songName, style, new Color(0.16f, 0.04f, 0.34f, 1f), 2.4f * scale);
+    }
+
+    private static void DrawFloatingNote(Rect rect, Color color)
+    {
+        DrawRect(new Rect(rect.x + rect.width * 0.58f, rect.y, rect.width * 0.22f, rect.height * 0.64f), color);
+        DrawRect(new Rect(rect.x + rect.width * 0.58f, rect.y, rect.width * 0.56f, rect.height * 0.14f), color);
+        DrawRect(new Rect(rect.x + rect.width * 0.06f, rect.y + rect.height * 0.58f, rect.width * 0.55f, rect.height * 0.28f), color);
+    }
+
+    private static void DrawCircleIcon(Rect rect, Color color, float scale)
+    {
+        DrawRect(rect, new Color(color.r, color.g, color.b, 0.42f));
+        Rect inner = new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale);
+        DrawRect(inner, new Color(color.r * 0.55f, color.g * 0.55f, color.b * 0.9f, 0.92f));
+        GUI.Label(inner, "♪", CreateSongSelectStyle(42f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+    }
+
+    private static void DrawEqualizer(Rect rect, float scale)
+    {
+        int bars = 16;
+        float gap = 5f * scale;
+        float barWidth = (rect.width - gap * (bars - 1)) / bars;
+        for (int i = 0; i < bars; i++)
+        {
+            float normalized = 0.25f + Mathf.Abs(Mathf.Sin(i * 1.33f)) * 0.75f;
+            float height = rect.height * normalized;
+            Rect bar = new Rect(rect.x + i * (barWidth + gap), rect.yMax - height, barWidth, height);
+            Color color = Color.Lerp(new Color(1f, 0.18f, 0.85f, 0.95f), new Color(0f, 0.95f, 1f, 0.95f), i / (float)(bars - 1));
+            DrawRect(bar, color);
+        }
+    }
+
+    private bool DrawCircleButton(Rect rect, string text, float scale)
+    {
+        DrawRect(rect, new Color(0.68f, 0.85f, 1f, 0.42f));
+        Rect inner = new Rect(rect.x + 10f * scale, rect.y + 10f * scale, rect.width - 20f * scale, rect.height - 20f * scale);
+        DrawRect(inner, new Color(0.02f, 0.03f, 0.24f, GUI.enabled ? 0.92f : 0.42f));
+        GUIStyle style = CreateSongSelectStyle(54f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        GUI.Label(inner, text, style);
+        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+    }
+
+    private bool DrawArcadeButton(Rect rect, string label, Color fill, Color highlight, float scale)
+    {
+        DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, GUI.enabled ? 0.95f : 0.38f), new Color(highlight.r, highlight.g, highlight.b, GUI.enabled ? 0.92f : 0.35f), scale);
+        Rect shine = new Rect(rect.x + 14f * scale, rect.y + 12f * scale, rect.width - 28f * scale, rect.height * 0.22f);
+        DrawRect(shine, new Color(1f, 1f, 1f, GUI.enabled ? 0.22f : 0.08f));
+        GUIStyle style = CreateSongSelectStyle(label == "PLAY" ? 42f : 27f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        DrawOutlinedLabel(rect, label, style, new Color(0f, 0f, 0.12f, 0.82f), 2f * scale);
+        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+    }
+
+    private void DrawSongSelectDifficultyButton(Rect rect, RhythmDifficulty difficulty, Color fill, float scale)
+    {
+        bool selected = selectedDifficulty == difficulty;
+        bool previousEnabled = GUI.enabled;
+        GUI.enabled = previousEnabled && !isLoadingLocalSong && !isRequestingMurekaSong;
+        Color border = selected ? new Color(1f, 1f, 1f, 0.96f) : new Color(0.72f, 0.95f, 1f, 0.72f);
+        DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, selected ? 0.95f : 0.70f), border, scale);
+        GUIStyle labelStyle = CreateSongSelectStyle(30f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        GUI.Label(new Rect(rect.x, rect.y + 12f * scale, rect.width, 44f * scale), GetDifficultyPreset(difficulty).Label, labelStyle);
+        GUI.Label(new Rect(rect.x, rect.y + 54f * scale, rect.width, 36f * scale), GetDifficultyStars(difficulty), CreateSongSelectStyle(23f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+        if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
+        {
+            SetDifficulty(difficulty);
+        }
+
+        GUI.enabled = previousEnabled;
+    }
+
+    private static string GetDifficultyStars(RhythmDifficulty difficulty)
+    {
+        switch (difficulty)
+        {
+            case RhythmDifficulty.Easy:
+                return "☆";
+            case RhythmDifficulty.Hard:
+                return "☆☆☆";
+            default:
+                return "☆☆";
+        }
+    }
+
+    private void EnsureSelectedSongIndex()
+    {
+        if (localSongs.Count == 0)
+        {
+            selectedLocalSongIndex = -1;
+            return;
+        }
+
+        if (selectedLocalSongIndex < 0)
+        {
+            selectedLocalSongIndex = 0;
+        }
+        else if (selectedLocalSongIndex >= localSongs.Count)
+        {
+            selectedLocalSongIndex = localSongs.Count - 1;
+        }
+    }
+
+    private int WrapSongIndex(int index)
+    {
+        if (localSongs.Count == 0)
+        {
+            return -1;
+        }
+
+        int wrapped = index % localSongs.Count;
+        return wrapped < 0 ? wrapped + localSongs.Count : wrapped;
+    }
+
+    private void SelectSongOffset(int offset)
+    {
+        if (localSongs.Count == 0)
+        {
+            selectedLocalSongIndex = -1;
+            return;
+        }
+
+        selectedLocalSongIndex = WrapSongIndex(selectedLocalSongIndex + offset);
+        generatedSongLabel = GetLocalSongName(selectedLocalSongIndex);
+        generatedSongProvider = "LOCAL";
+        generatedSongWarning = string.Empty;
+        murekaStatus = "Selected " + generatedSongLabel + ".";
+    }
+
+    private string GetLocalSongName(int index)
+    {
+        if (index < 0 || index >= localSongs.Count || localSongs[index] == null || string.IsNullOrWhiteSpace(localSongs[index].Name))
+        {
+            return "NO SONG";
+        }
+
+        return localSongs[index].Name;
     }
 
     private void DrawGameplayHud(float scale)
@@ -720,6 +983,29 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         Keyboard keyboard = Keyboard.current;
+        if (songSelectionVisible)
+        {
+            if (keyboard != null)
+            {
+                if (keyboard.leftArrowKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame)
+                {
+                    SelectSongOffset(-1);
+                }
+
+                if (keyboard.rightArrowKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame)
+                {
+                    SelectSongOffset(1);
+                }
+
+                if ((keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame) && selectedLocalSongIndex >= 0)
+                {
+                    PlayLocalSong(selectedLocalSongIndex);
+                }
+            }
+
+            return;
+        }
+
         if (keyboard != null)
         {
             if (keyboard.qKey.wasPressedThisFrame)
@@ -2664,7 +2950,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         selectedDifficulty = difficulty;
-        if (currentSongClip != null && !isLoadingLocalSong && !isRequestingMurekaSong)
+        if (currentSongClip != null && !songSelectionVisible && !isLoadingLocalSong && !isRequestingMurekaSong)
         {
             RebuildCurrentChartForDifficulty();
             murekaStatus = "Difficulty changed to " + GetDifficultyPreset().Label + ". Restarting current song.";
@@ -3023,6 +3309,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         RestartChart();
+        songSelectionVisible = false;
         murekaStatus = string.IsNullOrWhiteSpace(generatedSongWarning)
             ? "MUREKA song ready."
             : "MUREKA song ready. " + generatedSongWarning;
