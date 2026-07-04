@@ -11,6 +11,8 @@ using UnityEngine.InputSystem;
 
 public sealed class TitleScreenController : MonoBehaviour
 {
+    private const string StartSoundResourcePath = "TitleScreen/Audio/UI_WC_Score";
+
     [Header("Scene Flow")]
     [SerializeField] private string nextSceneName = "";
     [SerializeField] private UnityEvent onStartRequested;
@@ -143,6 +145,7 @@ public sealed class TitleScreenController : MonoBehaviour
         }
 
         startRequested = true;
+        PlayStartSound();
         onStartRequested?.Invoke();
         TriggerStartReaction();
 
@@ -188,6 +191,26 @@ public sealed class TitleScreenController : MonoBehaviour
     {
         yield return new WaitForSecondsRealtime(useStartReaction ? startReactionDuration : 0f);
         SceneManager.LoadScene(nextSceneName);
+    }
+
+    private static void PlayStartSound()
+    {
+        AudioClip clip = Resources.Load<AudioClip>(StartSoundResourcePath);
+        if (clip == null)
+        {
+            return;
+        }
+
+        GameObject soundObject = new GameObject("Title Start Click Sound");
+        DontDestroyOnLoad(soundObject);
+
+        AudioSource audioSource = soundObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+        audioSource.spatialBlend = 0f;
+        audioSource.volume = 1f;
+        audioSource.PlayOneShot(clip);
+
+        Destroy(soundObject, clip.length + 0.25f);
     }
 
     private void CacheBackgroundState()

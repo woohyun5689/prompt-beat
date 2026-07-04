@@ -207,6 +207,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float MurekaBackendStartupTimeout = 360f;
     private const string PromptControlName = "MurekaPromptField";
     private const string MusicResourcesPath = "Music";
+    private const string UiClickSoundResourcePath = "TitleScreen/Audio/UI_WC_Score";
     private const string PromptLaneMessage =
         "오늘 저녁 메뉴 추천해줘  ·  이 오류를 고쳐줘  ·  여행 계획을 짜줘  ·  이 글을 요약해줘  ·  자연스럽게 번역해줘  ·  아이디어를 브레인스토밍해줘  ·  이메일을 정중하게 다듬어줘  ·  공부 계획을 만들어줘  ·  ";
     private const string DefaultMurekaPrompt =
@@ -324,6 +325,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Texture2D uiPlayButton;
     private static Texture2D uiSongGenButton;
     private static Texture2D uiSongExpPanel;
+    private static AudioClip uiClickSoundClip;
     private static Texture2D uiPauseStop;
     private static Texture2D uiPauseTitle;
     private static Texture2D uiPauseBoard;
@@ -694,11 +696,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && localSongs.Count > 1 && !isLoadingLocalSong;
         if (DrawCircleButton(R(54f, 394f, 102f, 102f), "<", uiScale, true))
         {
+            PlayUiClickSound();
             SelectSongOffset(-1);
         }
 
         if (DrawCircleButton(R(1516f, 394f, 102f, 102f), ">", uiScale, false))
         {
+            PlayUiClickSound();
             SelectSongOffset(1);
         }
 
@@ -746,6 +750,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
         if (DrawArcadeButton(R(24f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale, uiSongGenButton))
         {
+            PlayUiClickSound();
             isMurekaPromptWindowVisible = true;
             GUI.FocusControl(PromptControlName);
             murekaStatus = "Write a prompt, then check the server or generate a song.";
@@ -754,6 +759,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && !isLoadingLocalSong;
         if (DrawArcadeButton(R(1340f, 812f, 316f, 112f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale, uiPlayButton))
         {
+            PlayUiClickSound();
             PlayLocalSong(selectedLocalSongIndex);
         }
 
@@ -781,6 +787,27 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         };
         style.normal.textColor = color;
         return style;
+    }
+
+    private static void PlayUiClickSound()
+    {
+        if (uiClickSoundClip == null)
+        {
+            uiClickSoundClip = Resources.Load<AudioClip>(UiClickSoundResourcePath);
+        }
+
+        if (uiClickSoundClip == null)
+        {
+            return;
+        }
+
+        GameObject soundObject = new GameObject("Song Select Button Click Sound");
+        AudioSource audioSource = soundObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+        audioSource.spatialBlend = 0f;
+        audioSource.volume = 1f;
+        audioSource.PlayOneShot(uiClickSoundClip);
+        Destroy(soundObject, uiClickSoundClip.length + 0.25f);
     }
 
     private void DrawMurekaPromptWindow(float scale)
@@ -1270,6 +1297,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.Label(new Rect(rect.x, rect.y + 54f * scale, rect.width, 36f * scale), GetDifficultyStars(difficulty), CreateSongSelectStyle(23f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, textColor));
         if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
         {
+            PlayUiClickSound();
             SetDifficulty(difficulty);
         }
 
@@ -1918,16 +1946,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         if (DrawPauseMenuButton(R(1040f, 930f, 300f, 82f), "REPLAY", new Color(0.52f, 0.12f, 0.92f, 1f), new Color(1f, 0.26f, 0.95f, 1f), fit))
         {
+            PlayUiClickSound();
             ReplayCurrentSongFromResult();
         }
 
         if (DrawPauseMenuButton(R(1388f, 930f, 330f, 82f), "SONG SELECT", new Color(0.08f, 0.68f, 0.28f, 1f), new Color(0.58f, 1f, 0.42f, 1f), fit))
         {
+            PlayUiClickSound();
             ReturnToSongSelectionFromResult();
         }
 
         if (DrawResultBackButton(R(1748f, 900f, 128f, 128f)))
         {
+            PlayUiClickSound();
             ReturnToSongSelectionFromResult();
         }
     }
