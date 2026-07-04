@@ -435,6 +435,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Texture2D resultGoodTexture;
     private Texture2D resultMissTexture;
     private Texture2D resultBackButtonTexture;
+    private Texture2D resultBackgroundTexture;
+    private Texture2D resultSpotlightTexture;
+    private Texture2D resultLightPoolTexture;
+    private Texture2D resultFrameTexture;
     private GUIStyle titleStyle;
     private GUIStyle numberStyle;
     private GUIStyle comboNumberStyle;
@@ -794,13 +798,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             (Screen.height - panelHeight) * 0.5f,
             panelWidth,
             panelHeight);
-        DrawNeonPanel(panelRect, new Color(0.025f, 0.025f, 0.18f, 0.98f), new Color(0.90f, 0.18f, 1f, 0.94f), scale);
+        DrawRoundedNeonPanel(panelRect, new Color(0.025f, 0.025f, 0.18f, 0.98f), new Color(0.90f, 0.18f, 1f, 0.94f), scale);
 
         GUIStyle titleStyle = CreateSongSelectStyle(32f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
         GUIStyle statusStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.86f, 0.95f, 1f, 0.88f));
         GUI.Label(new Rect(panelRect.x + 34f * scale, panelRect.y + 22f * scale, panelRect.width - 92f * scale, 46f * scale), "A.I 노래 생성", titleStyle);
 
-        if (GUI.Button(new Rect(panelRect.xMax - 58f * scale, panelRect.y + 22f * scale, 32f * scale, 32f * scale), "X"))
+        EnsurePauseUiTextures();
+        // return.png source is 103x82; keep its aspect for the close button.
+        Rect closeRect = new Rect(panelRect.xMax - 82f * scale, panelRect.y + 20f * scale, 52f * scale, 52f * 82f / 103f * scale);
+        if (uiPauseReturn != null)
+        {
+            GUI.DrawTexture(closeRect, uiPauseReturn, ScaleMode.StretchToFill);
+            if (GUI.Button(closeRect, GUIContent.none, GUIStyle.none))
+            {
+                CloseMurekaPromptWindow();
+                return;
+            }
+        }
+        else if (GUI.Button(new Rect(panelRect.xMax - 58f * scale, panelRect.y + 22f * scale, 32f * scale, 32f * scale), "X"))
         {
             CloseMurekaPromptWindow();
             return;
@@ -828,8 +844,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         bool previousEnabled = GUI.enabled;
         GUI.enabled = previousEnabled && !isRequestingMurekaSong && !isStartingMurekaBackend;
 
-        Rect serverButtonRect = new Rect(panelRect.x + 34f * scale, panelRect.yMax - 78f * scale, 196f * scale, 52f * scale);
-        if (DrawPauseMenuButton(serverButtonRect, "서버 확인", new Color(0.08f, 0.45f, 1f, 1f), new Color(0.16f, 0.95f, 1f, 1f), scale))
+        // Sized to the arcade button textures' aspect (song_gen 292x112, play 316x112).
+        Rect serverButtonRect = new Rect(panelRect.x + 34f * scale, panelRect.yMax - 92f * scale, 188f * scale, 72f * scale);
+        if (DrawArcadeButton(serverButtonRect, "서버 확인", new Color(0.08f, 0.45f, 1f, 1f), new Color(0.16f, 0.95f, 1f, 1f), scale, uiSongGenButton))
         {
             GUI.FocusControl(string.Empty);
             isEditingPrompt = false;
@@ -837,8 +854,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             StartMurekaBackendOnly();
         }
 
-        Rect generateButtonRect = new Rect(serverButtonRect.xMax + 18f * scale, serverButtonRect.y, 220f * scale, serverButtonRect.height);
-        if (DrawPauseMenuButton(generateButtonRect, "노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.96f, 0.24f, 1f, 1f), scale))
+        Rect generateButtonRect = new Rect(serverButtonRect.xMax + 18f * scale, serverButtonRect.y, 203f * scale, serverButtonRect.height);
+        if (DrawArcadeButton(generateButtonRect, "노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.96f, 0.24f, 1f, 1f), scale, uiPlayButton))
         {
             GUI.FocusControl(string.Empty);
             isEditingPrompt = false;
@@ -884,6 +901,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawRect(new Rect(rect.x + 4f * scale, rect.y + 4f * scale, rect.width - 8f * scale, rect.height - 8f * scale), new Color(border.r, border.g, border.b, border.a * alpha));
         DrawRect(new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale), new Color(fill.r, fill.g, fill.b, fill.a * alpha));
         DrawRect(new Rect(rect.x + 14f * scale, rect.y + 14f * scale, rect.width - 28f * scale, 3f * scale), new Color(1f, 1f, 1f, 0.25f * alpha));
+    }
+
+    private static void DrawRoundedNeonPanel(Rect rect, Color fill, Color border, float scale)
+    {
+        float radius = 26f * scale;
+        GUI.DrawTexture(rect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, new Color(border.r, border.g, border.b, 0.24f), 0f, radius);
+        Rect borderRect = new Rect(rect.x + 4f * scale, rect.y + 4f * scale, rect.width - 8f * scale, rect.height - 8f * scale);
+        GUI.DrawTexture(borderRect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, border, 0f, Mathf.Max(1f, radius - 4f * scale));
+        Rect fillRect = new Rect(rect.x + 9f * scale, rect.y + 9f * scale, rect.width - 18f * scale, rect.height - 18f * scale);
+        GUI.DrawTexture(fillRect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, fill, 0f, Mathf.Max(1f, radius - 9f * scale));
     }
 
     // Reference-space layout anchors for carousel slots -2..+2.
@@ -1715,10 +1742,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUIStyle progressLabelStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
         Rect progressNameRect = new Rect(progressX - 118f * scale, progressY - 11f * scale, 104f * scale, 34f * scale);
         Rect progressPercentRect = new Rect(progressX + progressWidth + 14f * scale, progressY - 11f * scale, 74f * scale, 34f * scale);
-        DrawPanel(progressNameRect, new Color(0.02f, 0.02f, 0.05f, 0.72f));
-        DrawPanel(progressPercentRect, new Color(0.02f, 0.02f, 0.05f, 0.72f));
-        GUI.Label(progressNameRect, "곡 진행도", progressLabelStyle);
-        GUI.Label(progressPercentRect, Mathf.RoundToInt(progress * 100f) + "%", progressLabelStyle);
+        Color progressOutline = new Color(0.16f, 0.035f, 0.28f, 0.92f);
+        DrawOutlinedLabel(progressNameRect, "곡 진행도", progressLabelStyle, progressOutline, 2f * scale);
+        DrawOutlinedLabel(progressPercentRect, Mathf.RoundToInt(progress * 100f) + "%", progressLabelStyle, progressOutline, 2f * scale);
     }
 
     private static void EnsurePauseUiTextures()
@@ -1898,12 +1924,23 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         DrawResultScoreBackdrop(new Rect(0f, 0f, Screen.width, Screen.height), fit);
 
-        Rect panelRect = R(860f, 118f, 900f, 800f);
-        DrawNeonPanel(panelRect, new Color(0.80f, 0.60f, 1f, 0.46f), new Color(1f, 1f, 1f, 0.82f), fit, 1f);
-        DrawNeonPanel(R(912f, 182f, 796f, 682f), new Color(0.95f, 0.80f, 1f, 0.18f), new Color(1f, 1f, 1f, 0.68f), fit, 0.78f);
+        if (resultLightPoolTexture != null)
+        {
+            // Spotlight pool on the floor beneath the score board.
+            DrawResultTexture(resultLightPoolTexture, R(830f, 908f, 960f, 98f), WhiteColor);
+        }
 
-        GUIStyle title = CreateSongSelectStyle(48f, fit, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
-        DrawOutlinedLabel(R(980f, 120f, 600f, 74f), "FINAL SCORE", title, new Color(0.58f, 0.08f, 0.86f, 0.95f), 3f * fit);
+        if (resultFrameTexture != null)
+        {
+            // Frame texture is 1102x946; width fits the aspect against the 800-tall panel.
+            DrawResultTexture(resultFrameTexture, R(844f, 118f, 932f, 800f), WhiteColor);
+        }
+        else
+        {
+            Rect panelRect = R(860f, 118f, 900f, 800f);
+            DrawNeonPanel(panelRect, new Color(0.80f, 0.60f, 1f, 0.46f), new Color(1f, 1f, 1f, 0.82f), fit, 1f);
+            DrawNeonPanel(R(912f, 182f, 796f, 682f), new Color(0.95f, 0.80f, 1f, 0.18f), new Color(1f, 1f, 1f, 0.68f), fit, 0.78f);
+        }
 
         Texture2D rankTexture = GetResultRankTexture(CalculateResultRank());
         DrawResultTexture(rankTexture, R(1190f, 220f, 330f, 260f), WhiteColor);
@@ -1918,17 +1955,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUIStyle songStyle = CreateSongSelectStyle(24f, fit, TextAnchor.MiddleCenter, FontStyle.Bold, new Color(0.92f, 0.96f, 1f, 0.94f));
         GUI.Label(R(930f, 836f, 760f, 44f), GetDisplaySongTitle(generatedSongLabel), songStyle);
 
-        if (DrawPauseMenuButton(R(1040f, 930f, 300f, 82f), "REPLAY", new Color(0.52f, 0.12f, 0.92f, 1f), new Color(1f, 0.26f, 0.95f, 1f), fit))
+        // Reference layout keeps icon-only controls: replay arrow bottom-right,
+        // return-to-song-select arrow bottom-left (same icon as the pause board).
+        if (DrawResultBackButton(R(1748f, 900f, 128f, 128f)))
         {
             ReplayCurrentSongFromResult();
         }
 
-        if (DrawPauseMenuButton(R(1388f, 930f, 330f, 82f), "SONG SELECT", new Color(0.08f, 0.68f, 0.28f, 1f), new Color(0.58f, 1f, 0.42f, 1f), fit))
+        EnsurePauseUiTextures();
+        Rect songSelectRect = R(56f, 924f, 128f, 128f * 82f / 103f);
+        if (uiPauseReturn != null)
         {
-            ReturnToSongSelectionFromResult();
+            GUI.DrawTexture(songSelectRect, uiPauseReturn, ScaleMode.ScaleToFit);
+            if (GUI.Button(songSelectRect, GUIContent.none, GUIStyle.none))
+            {
+                ReturnToSongSelectionFromResult();
+            }
         }
-
-        if (DrawResultBackButton(R(1748f, 900f, 128f, 128f)))
+        else if (DrawPauseMenuButton(R(56f, 930f, 330f, 82f), "SONG SELECT", new Color(0.08f, 0.68f, 0.28f, 1f), new Color(0.58f, 1f, 0.42f, 1f), fit))
         {
             ReturnToSongSelectionFromResult();
         }
@@ -1955,6 +1999,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawResultScoreBackdrop(Rect rect, float scale)
     {
+        if (resultBackgroundTexture != null)
+        {
+            GUI.DrawTexture(rect, resultBackgroundTexture, ScaleMode.StretchToFill);
+            if (resultSpotlightTexture != null)
+            {
+                GUI.DrawTexture(rect, resultSpotlightTexture, ScaleMode.StretchToFill);
+            }
+
+            return;
+        }
+
         DrawRect(rect, new Color(0.34f, 0.10f, 0.74f, 1f));
         DrawRect(new Rect(rect.x, rect.y, rect.width, rect.height * 0.48f), new Color(0.52f, 0.22f, 1f, 0.58f));
         DrawRect(new Rect(rect.x, rect.y + rect.height * 0.54f, rect.width, rect.height * 0.46f), new Color(1f, 0.58f, 0.94f, 0.34f));
@@ -5887,7 +5942,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         resultGoodTexture = Resources.Load<Texture2D>("Score/good");
         resultMissTexture = Resources.Load<Texture2D>("Score/miss");
         resultBackButtonTexture = Resources.Load<Texture2D>("Score/back");
+        resultBackgroundTexture = Resources.Load<Texture2D>("Score/result_bg");
+        resultSpotlightTexture = Resources.Load<Texture2D>("Score/result_spotlight");
+        resultLightPoolTexture = Resources.Load<Texture2D>("Score/result_light_pool");
+        resultFrameTexture = Resources.Load<Texture2D>("Score/result_frame");
 
+        ConfigureJudgementTexture(resultBackgroundTexture);
+        ConfigureJudgementTexture(resultSpotlightTexture);
+        ConfigureJudgementTexture(resultLightPoolTexture);
+        ConfigureJudgementTexture(resultFrameTexture);
         ConfigureJudgementTexture(resultRankSTexture);
         ConfigureJudgementTexture(resultRankATexture);
         ConfigureJudgementTexture(resultRankBTexture);
