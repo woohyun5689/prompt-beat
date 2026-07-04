@@ -170,6 +170,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float HitFxLifetime = 0.28f;
     private const float LongNoteScratchDuration = 0.22f;
     private const float LongNoteTailDistance = 2.74f;
+    private const float HitLineWidthScale = 0.24f;
+    private const float HitLineHeightScale = 1.25f;
+    private const float HitLineDownOffsetMultiplier = 1.25f;
     private const float BlueLongNoteVerticalOffset = 1.94f;
     private const float CharacterAfterimageDuration = 0.40f;
     private const float WheelGestureThreshold = 0.35f;
@@ -358,7 +361,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool isStartingMurekaBackend;
     private bool isLoadingLocalSong;
     private bool isEditingPrompt;
+    private bool isMurekaPromptWindowVisible;
     private RhythmDifficulty selectedDifficulty = RhythmDifficulty.Normal;
+    private bool hasSelectedDifficultyForSong;
     private bool songSelectionVisible = true;
     private bool isGamePaused;
     private double pauseStartedDspTime;
@@ -572,7 +577,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawSongCarousel(offsetX, offsetY, fit, hasSongs, uiScale);
 
         bool previousEnabled = GUI.enabled;
-        GUI.enabled = previousEnabled && hasSongs && localSongs.Count > 1 && !isLoadingLocalSong;
+        GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && localSongs.Count > 1 && !isLoadingLocalSong;
         if (DrawCircleButton(R(54f, 392f, 106f, 106f), "<", uiScale))
         {
             SelectSongOffset(-1);
@@ -606,13 +611,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawSongSelectDifficultyButton(R(730f, 812f, 212f, 112f), RhythmDifficulty.Normal, new Color(0.08f, 0.74f, 0.25f, 1f), uiScale);
         DrawSongSelectDifficultyButton(R(956f, 812f, 212f, 112f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
 
-        GUI.enabled = previousEnabled && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
+        GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
         if (DrawArcadeButton(R(24f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale))
         {
-            GenerateNewSong();
+            isMurekaPromptWindowVisible = true;
+            GUI.FocusControl(PromptControlName);
+            murekaStatus = "Write a prompt, then check the server or generate a song.";
         }
 
-        GUI.enabled = previousEnabled && hasSongs && !isLoadingLocalSong;
+        GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && hasSelectedDifficultyForSong && !isLoadingLocalSong;
         if (DrawArcadeButton(R(1340f, 812f, 316f, 112f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale))
         {
             PlayLocalSong(selectedLocalSongIndex);
@@ -624,6 +631,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             ? "노래를 준비하는 중..."
             : murekaStatus;
         GUI.Label(R(916f, 42f, 600f, 36f), status, statusStyle);
+
+        if (isMurekaPromptWindowVisible)
+        {
+            DrawMurekaPromptWindow(uiScale);
+        }
     }
 
     private static GUIStyle CreateSongSelectStyle(float size, float scale, TextAnchor anchor, FontStyle fontStyle, Color color)
@@ -637,6 +649,75 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         };
         style.normal.textColor = color;
         return style;
+    }
+
+    private void DrawMurekaPromptWindow(float scale)
+    {
+        DrawRect(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.58f));
+
+        float panelWidth = Mathf.Min(680f * scale, Screen.width - 56f * scale);
+        float panelHeight = 360f * scale;
+        Rect panelRect = new Rect(
+            (Screen.width - panelWidth) * 0.5f,
+            (Screen.height - panelHeight) * 0.5f,
+            panelWidth,
+            panelHeight);
+        DrawNeonPanel(panelRect, new Color(0.025f, 0.025f, 0.18f, 0.98f), new Color(0.90f, 0.18f, 1f, 0.94f), scale);
+
+        GUIStyle titleStyle = CreateSongSelectStyle(32f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
+        GUIStyle statusStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.86f, 0.95f, 1f, 0.88f));
+        GUI.Label(new Rect(panelRect.x + 34f * scale, panelRect.y + 22f * scale, panelRect.width - 92f * scale, 46f * scale), "MUREKA 노래 생성", titleStyle);
+
+        if (GUI.Button(new Rect(panelRect.xMax - 58f * scale, panelRect.y + 22f * scale, 32f * scale, 32f * scale), "X"))
+        {
+            CloseMurekaPromptWindow();
+            return;
+        }
+
+        GUIStyle promptTextStyle = new GUIStyle(GUI.skin.textArea)
+        {
+            fontSize = Mathf.RoundToInt(16f * scale),
+            wordWrap = true
+        };
+
+        GUI.SetNextControlName(PromptControlName);
+        murekaPrompt = GUI.TextArea(
+            new Rect(panelRect.x + 34f * scale, panelRect.y + 82f * scale, panelRect.width - 68f * scale, 146f * scale),
+            murekaPrompt,
+            240,
+            promptTextStyle);
+        isEditingPrompt = GUI.GetNameOfFocusedControl() == PromptControlName;
+
+        GUI.Label(new Rect(panelRect.x + 38f * scale, panelRect.y + 236f * scale, panelRect.width - 76f * scale, 28f * scale), murekaStatus, statusStyle);
+
+        bool previousEnabled = GUI.enabled;
+        GUI.enabled = previousEnabled && !isRequestingMurekaSong && !isStartingMurekaBackend;
+
+        Rect serverButtonRect = new Rect(panelRect.x + 34f * scale, panelRect.yMax - 78f * scale, 196f * scale, 52f * scale);
+        if (DrawPauseMenuButton(serverButtonRect, "서버 확인", new Color(0.08f, 0.45f, 1f, 1f), new Color(0.16f, 0.95f, 1f, 1f), scale))
+        {
+            GUI.FocusControl(string.Empty);
+            isEditingPrompt = false;
+            StartMurekaBackendOnly();
+        }
+
+        Rect generateButtonRect = new Rect(serverButtonRect.xMax + 18f * scale, serverButtonRect.y, 220f * scale, serverButtonRect.height);
+        if (DrawPauseMenuButton(generateButtonRect, "노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.96f, 0.24f, 1f, 1f), scale))
+        {
+            GUI.FocusControl(string.Empty);
+            isEditingPrompt = false;
+            isMurekaPromptWindowVisible = false;
+            GenerateNewSong();
+        }
+
+        GUI.enabled = previousEnabled;
+    }
+
+    private void CloseMurekaPromptWindow()
+    {
+        isMurekaPromptWindowVisible = false;
+        isEditingPrompt = false;
+        GUI.FocusControl(string.Empty);
     }
 
     private static void DrawSongSelectBackdrop(Rect rect)
@@ -874,9 +955,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawSongSelectDifficultyButton(Rect rect, RhythmDifficulty difficulty, Color fill, float scale)
     {
-        bool selected = selectedDifficulty == difficulty;
+        bool selected = hasSelectedDifficultyForSong && selectedDifficulty == difficulty;
         bool previousEnabled = GUI.enabled;
-        GUI.enabled = previousEnabled && !isLoadingLocalSong && !isRequestingMurekaSong;
+        GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && !isLoadingLocalSong && !isRequestingMurekaSong;
         Color border = selected ? new Color(1f, 1f, 1f, 0.96f) : new Color(0.72f, 0.95f, 1f, 0.72f);
         DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, selected ? 0.95f : 0.70f), border, scale);
         GUIStyle labelStyle = CreateSongSelectStyle(30f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
@@ -944,10 +1025,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         // Keep the cards visually in place, then let the spring ease them into
         // their new slots so browsing feels like sliding a shelf of albums.
         songCarouselOffset = Mathf.Clamp(songCarouselOffset + offset, -2.2f, 2.2f);
+        hasSelectedDifficultyForSong = false;
         generatedSongLabel = GetLocalSongName(selectedLocalSongIndex);
         generatedSongProvider = "LOCAL";
         generatedSongWarning = string.Empty;
-        murekaStatus = "Selected " + generatedSongLabel + ".";
+        murekaStatus = "Selected " + generatedSongLabel + ". Choose a difficulty.";
     }
 
     private string GetLocalSongName(int index)
@@ -1190,8 +1272,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         chartFinished = false;
         judgementKind = JudgementKind.None;
         judgementVisibleUntil = 0f;
+        hasSelectedDifficultyForSong = false;
         songSelectionVisible = true;
-        murekaStatus = "Select a local song to play.";
+        murekaStatus = "Select a local song and difficulty to play.";
     }
 
     private void DrawMurekaControls(float scale)
@@ -1256,6 +1339,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             if (GUI.Button(new Rect(panelX, panelY, 118f * scale, 30f * scale), "SONGS"))
             {
+                hasSelectedDifficultyForSong = false;
                 songSelectionVisible = true;
             }
 
@@ -1363,16 +1447,32 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void ReadInput()
     {
+        Keyboard keyboard = Keyboard.current;
         if (isEditingPrompt)
         {
+            if (isMurekaPromptWindowVisible && keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            {
+                isMurekaPromptWindowVisible = false;
+                isEditingPrompt = false;
+            }
+
             return;
         }
 
-        Keyboard keyboard = Keyboard.current;
         if (songSelectionVisible)
         {
             if (keyboard != null)
             {
+                if (isMurekaPromptWindowVisible)
+                {
+                    if (keyboard.escapeKey.wasPressedThisFrame)
+                    {
+                        isMurekaPromptWindowVisible = false;
+                    }
+
+                    return;
+                }
+
                 if (keyboard.leftArrowKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame)
                 {
                     SelectSongOffset(-1);
@@ -1383,9 +1483,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     SelectSongOffset(1);
                 }
 
-                if ((keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame) && selectedLocalSongIndex >= 0)
+                if (keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)
                 {
-                    PlayLocalSong(selectedLocalSongIndex);
+                    if (selectedLocalSongIndex >= 0 && hasSelectedDifficultyForSong)
+                    {
+                        PlayLocalSong(selectedLocalSongIndex);
+                    }
+                    else if (selectedLocalSongIndex >= 0)
+                    {
+                        murekaStatus = "Choose a difficulty before playing.";
+                    }
                 }
             }
 
@@ -2322,10 +2429,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GameObject hitLine = new GameObject("Blinking Search Cursor");
         hitLine.transform.SetParent(stage.transform, false);
         hitLine.transform.position = new Vector3(HitX, LaneY, 0f);
-        hitLine.transform.localScale = new Vector3(0.24f, 1f, 1f);
+        hitLine.transform.localScale = new Vector3(HitLineWidthScale, HitLineHeightScale, 1f);
         hitLineRenderer = hitLine.AddComponent<SpriteRenderer>();
         hitLineRenderer.sprite = hitLineSprite;
         hitLineRenderer.sortingOrder = 2;
+        if (hitLineSprite != null && hitLineSprite.pixelsPerUnit > 0f)
+        {
+            float baseHeight = hitLineSprite.rect.height / hitLineSprite.pixelsPerUnit;
+            float downOnlyOffset = (HitLineHeightScale - 1f) * baseHeight * 0.5f * HitLineDownOffsetMultiplier;
+            hitLine.transform.position = new Vector3(HitX, LaneY - downOnlyOffset, 0f);
+        }
 
         GameObject ring = new GameObject("Judge Ring");
         ring.transform.SetParent(stage.transform, false);
@@ -3575,6 +3688,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
+        if (songSelectionVisible && !hasSelectedDifficultyForSong)
+        {
+            murekaStatus = "Choose a difficulty before playing.";
+            return;
+        }
+
         if (index < 0 || index >= localSongs.Count || localSongs[index] == null)
         {
             murekaStatus = "Selected local song could not be loaded.";
@@ -3723,12 +3842,18 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void SetDifficulty(RhythmDifficulty difficulty)
     {
-        if (selectedDifficulty == difficulty)
+        bool changed = selectedDifficulty != difficulty;
+        selectedDifficulty = difficulty;
+        if (songSelectionVisible)
+        {
+            hasSelectedDifficultyForSong = true;
+        }
+
+        if (!changed && !songSelectionVisible)
         {
             return;
         }
 
-        selectedDifficulty = difficulty;
         if (currentSongClip != null && !songSelectionVisible && !isLoadingLocalSong && !isRequestingMurekaSong)
         {
             RebuildCurrentChartForDifficulty();
