@@ -197,9 +197,31 @@ def fill_text_item(item, prompt: str) -> bool:
         try:
             item.press("Control+A", timeout=1000)
             item.press("Backspace", timeout=1000)
-            item.type(prompt, delay=5, timeout=15000)
         except Exception:
+            pass
+        try:
             item.fill(prompt, timeout=5000)
+        except Exception:
+            item.evaluate(
+                """
+                (el, value) => {
+                  if (el.isContentEditable) {
+                    el.textContent = value;
+                  } else {
+                    const proto = el.tagName === 'TEXTAREA'
+                      ? window.HTMLTextAreaElement.prototype
+                      : window.HTMLInputElement.prototype;
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                    if (setter) {
+                      setter.call(el, value);
+                    } else {
+                      el.value = value;
+                    }
+                  }
+                }
+                """,
+                prompt,
+            )
         try:
             item.evaluate(
                 """

@@ -51,7 +51,7 @@ function Send-File {
 
 function Read-RequestJson {
     param($Request)
-    $reader = [System.IO.StreamReader]::new($Request.InputStream, $Request.ContentEncoding)
+    $reader = [System.IO.StreamReader]::new($Request.InputStream, [System.Text.Encoding]::UTF8)
     try {
         $body = $reader.ReadToEnd()
     } finally {

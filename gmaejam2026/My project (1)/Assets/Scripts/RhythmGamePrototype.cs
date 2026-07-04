@@ -37,6 +37,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         Hard
     }
 
+    private enum ResultRank
+    {
+        D,
+        C,
+        B,
+        A,
+        S
+    }
+
     private struct NoteSpec
     {
         public readonly float Time;
@@ -384,6 +393,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private RhythmDifficulty selectedDifficulty = RhythmDifficulty.Normal;
     private bool songSelectionVisible = true;
     private bool isGamePaused;
+    private bool resultScreenVisible;
     private double pauseStartedDspTime;
     private float pausedSongElapsed;
     private bool worldHiddenForSongSelect;
@@ -396,6 +406,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private int combo;
     private int bestCombo;
     private int successfulHitCount;
+    private int perfectCount;
+    private int greatCount;
+    private int goodCount;
+    private int missCount;
     private float displayedHeartFill;
     private float displayedColorRecovery;
     private JudgementKind judgementKind = JudgementKind.None;
@@ -404,6 +418,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Texture2D greatJudgementTexture;
     private Texture2D perfectJudgementTexture;
     private Texture2D missJudgementTexture;
+    private Texture2D resultRankSTexture;
+    private Texture2D resultRankATexture;
+    private Texture2D resultRankBTexture;
+    private Texture2D resultRankCTexture;
+    private Texture2D resultRankDTexture;
+    private Texture2D resultComboTexture;
+    private Texture2D resultPerfectTexture;
+    private Texture2D resultGreatTexture;
+    private Texture2D resultGoodTexture;
+    private Texture2D resultMissTexture;
+    private Texture2D resultBackButtonTexture;
     private GUIStyle titleStyle;
     private GUIStyle numberStyle;
     private GUIStyle comboNumberStyle;
@@ -465,6 +490,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         EnsureSharedAssets();
         LoadUiSheetAssets();
         LoadJudgementTextures();
+        LoadResultScoreTextures();
         SetupCamera();
         SetupStage();
         SetupCharacter();
@@ -488,7 +514,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         UpdateSongSelectCamera();
         UpdateSongCarousel();
         UpdateSongPreviewPlayback();
-        if (isGamePaused)
+        if (isGamePaused || resultScreenVisible)
         {
             return;
         }
@@ -498,7 +524,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         UpdateCameraShake();
         UpdateParallaxBackground();
         UpdateHitLineBlink();
-        UpdatePromptLane();
         UpdateHeartAndWorldColor();
     }
 
@@ -549,6 +574,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (songSelectionVisible)
         {
             DrawSongSelectScene(scale);
+            return;
+        }
+
+        if (resultScreenVisible)
+        {
+            DrawResultScoreScene(scale);
             return;
         }
 
@@ -633,11 +664,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUIStyle promptTitleStyle = CreateSongSelectStyle(22f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0f, 1f, 0.98f, 1f));
         GUIStyle promptTextStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.UpperLeft, FontStyle.Bold, new Color(0.88f, 0.95f, 1f, 0.94f));
         promptTextStyle.wordWrap = true;
-        GUIStyle statusStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.MiddleRight, FontStyle.Bold, new Color(0.84f, 0.95f, 1f, 0.86f));
+        GUIStyle statusStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.84f, 0.95f, 1f, 0.86f));
 
         if (uiSelectMusicTitle != null)
         {
-            GUI.DrawTexture(R(536f, 16f, 600f, 84f), uiSelectMusicTitle, ScaleMode.StretchToFill);
+            GUI.DrawTexture(R(536f, 0f, 600f, 84f), uiSelectMusicTitle, ScaleMode.StretchToFill);
         }
         else
         {
@@ -649,7 +680,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         bool hasSongs = localSongs.Count > 0;
-        string selectedSongName = GetLocalSongName(selectedLocalSongIndex);
+        string selectedSongName = GetDisplaySongTitle(GetLocalSongName(selectedLocalSongIndex));
 
         DrawSongCarousel(stretchX, offsetY, fit, hasSongs, uiScale);
 
@@ -684,6 +715,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             GUI.Label(R(548f, 620f, 500f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
             GUI.Label(R(550f, 674f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
             GUI.Label(R(552f, 712f, 510f, 58f), infoDescription, promptTextStyle);
+            DrawEqualizer(R(986f, 620f, 288f, 58f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
             // The dark pill baked into the panel art hosts the BPM readout.
             GUI.Label(R(1094f, 714f, 186f, 54f), previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
         }
@@ -724,7 +756,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         string status = isLoadingLocalSong
             ? "노래를 준비하는 중..."
             : murekaStatus;
-        GUI.Label(R(916f, 42f, 600f, 36f), status, statusStyle);
+        GUI.Label(R(22f, 42f, 560f, 36f), status, statusStyle);
 
         if (isMurekaPromptWindowVisible)
         {
@@ -760,7 +792,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         GUIStyle titleStyle = CreateSongSelectStyle(32f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
         GUIStyle statusStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.86f, 0.95f, 1f, 0.88f));
-        GUI.Label(new Rect(panelRect.x + 34f * scale, panelRect.y + 22f * scale, panelRect.width - 92f * scale, 46f * scale), "MUREKA 노래 생성", titleStyle);
+        GUI.Label(new Rect(panelRect.x + 34f * scale, panelRect.y + 22f * scale, panelRect.width - 92f * scale, 46f * scale), "A.I 노래 생성", titleStyle);
 
         if (GUI.Button(new Rect(panelRect.xMax - 58f * scale, panelRect.y + 22f * scale, 32f * scale, 32f * scale), "X"))
         {
@@ -771,16 +803,19 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUIStyle promptTextStyle = new GUIStyle(GUI.skin.textArea)
         {
             fontSize = Mathf.RoundToInt(16f * scale),
+            font = gameFont,
             wordWrap = true
         };
 
+        Rect promptRect = new Rect(panelRect.x + 34f * scale, panelRect.y + 82f * scale, panelRect.width - 68f * scale, 146f * scale);
         GUI.SetNextControlName(PromptControlName);
         murekaPrompt = GUI.TextArea(
-            new Rect(panelRect.x + 34f * scale, panelRect.y + 82f * scale, panelRect.width - 68f * scale, 146f * scale),
+            promptRect,
             murekaPrompt,
             240,
             promptTextStyle);
         isEditingPrompt = GUI.GetNameOfFocusedControl() == PromptControlName;
+        UpdatePromptImeState(isEditingPrompt, promptRect, scale);
 
         GUI.Label(new Rect(panelRect.x + 38f * scale, panelRect.y + 236f * scale, panelRect.width - 76f * scale, 28f * scale), murekaStatus, statusStyle);
 
@@ -792,6 +827,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             GUI.FocusControl(string.Empty);
             isEditingPrompt = false;
+            UpdatePromptImeState(false, Rect.zero, 1f);
             StartMurekaBackendOnly();
         }
 
@@ -800,6 +836,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             GUI.FocusControl(string.Empty);
             isEditingPrompt = false;
+            UpdatePromptImeState(false, Rect.zero, 1f);
             isMurekaPromptWindowVisible = false;
             GenerateNewSong();
         }
@@ -809,9 +846,23 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void CloseMurekaPromptWindow()
     {
+        UpdatePromptImeState(false, Rect.zero, 1f);
         isMurekaPromptWindowVisible = false;
         isEditingPrompt = false;
         GUI.FocusControl(string.Empty);
+    }
+
+    private static void UpdatePromptImeState(bool active, Rect textRect, float scale)
+    {
+        if (active)
+        {
+            Input.imeCompositionMode = IMECompositionMode.On;
+            Input.compositionCursorPos = new Vector2(textRect.x + 12f * scale, textRect.y + 20f * scale);
+        }
+        else if (Input.imeCompositionMode == IMECompositionMode.On)
+        {
+            Input.imeCompositionMode = IMECompositionMode.Auto;
+        }
     }
 
     private static void DrawSongSelectBackdrop(Rect rect)
@@ -846,15 +897,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void UpdateSongSelectWorldVisibility()
     {
-        // On the song-select screen only the parallax backdrop should remain:
-        // the runner, prompt lane, hit line, ring and notes are gameplay-only.
-        if (worldHiddenForSongSelect == songSelectionVisible)
+        // Menu/result screens keep only the parallax backdrop visible:
+        // the runner, hit line, ring and notes are gameplay-only.
+        bool hideGameplayWorld = songSelectionVisible || resultScreenVisible;
+        if (worldHiddenForSongSelect == hideGameplayWorld)
         {
             return;
         }
 
-        worldHiddenForSongSelect = songSelectionVisible;
-        bool show = !songSelectionVisible;
+        worldHiddenForSongSelect = hideGameplayWorld;
+        bool show = !hideGameplayWorld;
         if (characterAnimation != null)
         {
             characterAnimation.gameObject.SetActive(show);
@@ -961,7 +1013,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             y += Mathf.Sin(Time.unscaledTime * 2.1f + (songIndex < 0 ? slot : songIndex) * 1.7f)
                 * Mathf.Lerp(7f, 3.5f, selection);
 
-            string songName = hasSongs ? GetLocalSongName(songIndex) : (slot == 0 ? "NO LOCAL SONG" : "NO SONG");
+            string songName = hasSongs ? GetDisplaySongTitle(GetLocalSongName(songIndex)) : (slot == 0 ? "NO LOCAL SONG" : "NO SONG");
             Color accent = SongCardAccents[songIndex < 0 ? 0 : songIndex % SongCardAccents.Length];
             float centerX = (x + width * 0.5f) * stretchX;
             Rect rect = new Rect(centerX - width * fit * 0.5f, offsetY + y * fit, width * fit, height * fit);
@@ -976,30 +1028,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        // Near the center the procedural panel crossfades into the songbox
-        // board art from the UI kit.
-        float boardBlend = uiSongboxBoard != null ? SmoothEdge(0.55f, 0.92f, selection) : 0f;
-        float panelAlpha = alpha * (1f - boardBlend);
-        if (panelAlpha > 0.01f)
+        if (uiSongboxBoard != null)
         {
-            Color selectedFill = new Color(accent.r * 0.45f, accent.g * 0.25f, accent.b * 0.72f, 0.96f);
-            Color unselectedFill = new Color(accent.r * 0.55f, accent.g * 0.45f, accent.b * 0.75f, 0.72f);
-            Color fill = Color.Lerp(unselectedFill, selectedFill, selection);
-            DrawNeonPanel(rect, fill, new Color(0.78f, 0.95f, 1f, Mathf.Lerp(0.68f, 0.96f, selection)), scale, panelAlpha);
-
-            Rect iconRect = new Rect(rect.center.x - rect.width * 0.16f, rect.y + rect.height * 0.15f, rect.width * 0.32f, rect.height * 0.32f);
-            DrawCircleIcon(iconRect, new Color(0.95f, 0.74f, 1f, Mathf.Lerp(0.72f, 1f, selection)), scale, panelAlpha);
-        }
-
-        if (boardBlend > 0.01f)
-        {
+            float brightness = Mathf.Lerp(0.68f, 1f, selection);
             Color previousBoardColor = GUI.color;
-            GUI.color = new Color(1f, 1f, 1f, previousBoardColor.a * alpha * boardBlend);
+            GUI.color = new Color(brightness, brightness, brightness, previousBoardColor.a * alpha);
             GUI.DrawTexture(rect, uiSongboxBoard, ScaleMode.StretchToFill);
+            Rect frameRect = Rect.zero;
             if (uiSongboxFrame != null)
             {
                 float frameSize = rect.width * 0.34f;
-                Rect frameRect = new Rect(
+                frameRect = new Rect(
                     rect.center.x - frameSize * 0.5f,
                     rect.y + rect.height * 0.11f,
                     frameSize,
@@ -1008,6 +1047,29 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
 
             GUI.color = previousBoardColor;
+
+            float dimAlpha = Mathf.Lerp(0.22f, 0f, selection) * alpha;
+            if (dimAlpha > 0.001f)
+            {
+                GUI.color = new Color(0f, 0f, 0.06f, previousBoardColor.a * dimAlpha);
+                GUI.DrawTexture(rect, uiSongboxBoard, ScaleMode.StretchToFill);
+                if (uiSongboxFrame != null)
+                {
+                    GUI.DrawTexture(frameRect, uiSongboxFrame, ScaleMode.StretchToFill);
+                }
+
+                GUI.color = previousBoardColor;
+            }
+        }
+        else
+        {
+            Color selectedFill = new Color(accent.r * 0.45f, accent.g * 0.25f, accent.b * 0.72f, 0.96f);
+            Color unselectedFill = new Color(accent.r * 0.55f, accent.g * 0.45f, accent.b * 0.75f, 0.72f);
+            Color fill = Color.Lerp(unselectedFill, selectedFill, selection);
+            DrawNeonPanel(rect, fill, new Color(0.78f, 0.95f, 1f, Mathf.Lerp(0.68f, 0.96f, selection)), scale, alpha);
+
+            Rect iconRect = new Rect(rect.center.x - rect.width * 0.16f, rect.y + rect.height * 0.15f, rect.width * 0.32f, rect.height * 0.32f);
+            DrawCircleIcon(iconRect, new Color(0.95f, 0.74f, 1f, Mathf.Lerp(0.72f, 1f, selection)), scale, alpha);
         }
 
         // Fixed font size + GUI.matrix scaling: animating the font size itself
@@ -1277,6 +1339,54 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         return localSongs[index].Name;
+    }
+
+    private static string GetDisplaySongTitle(string songName)
+    {
+        if (string.IsNullOrWhiteSpace(songName))
+        {
+            return "NO SONG";
+        }
+
+        string title = songName.Trim();
+        string[] separators =
+        {
+            " _",
+            "_ ",
+            " (",
+            " [",
+            " - ",
+            " | "
+        };
+
+        for (int i = 0; i < separators.Length; i++)
+        {
+            int index = title.IndexOf(separators[i], StringComparison.Ordinal);
+            if (index > 0)
+            {
+                title = title.Substring(0, index).Trim();
+                break;
+            }
+        }
+
+        int firstTitleChar = 0;
+        while (firstTitleChar < title.Length && !char.IsLetterOrDigit(title[firstTitleChar]))
+        {
+            firstTitleChar++;
+        }
+
+        if (firstTitleChar > 0 && firstTitleChar < title.Length)
+        {
+            title = title.Substring(firstTitleChar).Trim();
+        }
+
+        const int maxTitleLength = 18;
+        if (title.Length > maxTitleLength)
+        {
+            title = title.Substring(0, maxTitleLength - 3).TrimEnd() + "...";
+        }
+
+        return string.IsNullOrWhiteSpace(title) ? songName.Trim() : title;
     }
 
     private SongAnalysis GetSelectedSongPreviewAnalysis()
@@ -1593,7 +1703,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawRect(new Rect(progressX, progressY, progressWidth * progress, progressHeight), new Color(1f, 0.25f, 0.82f, 1f));
 
         smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.82f);
-        GUI.Label(new Rect(18f * scale, 16f * scale, 430f * scale, 26f * scale), generatedSongLabel + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
+        GUI.Label(new Rect(18f * scale, 16f * scale, 430f * scale, 26f * scale), GetDisplaySongTitle(generatedSongLabel) + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
         GUI.Label(new Rect(126f * scale, Screen.height - 56f * scale, 180f * scale, 26f * scale), "BEST " + bestCombo + "x", smallStyle);
 
         GUIStyle progressLabelStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
@@ -1667,6 +1777,250 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUIStyle style = CreateSongSelectStyle(26f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
         DrawOutlinedLabel(rect, label, style, new Color(0f, 0f, 0.14f, 0.86f), 2f * scale);
         return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+    }
+
+    private void DrawResultScoreScene(float scale)
+    {
+        float referenceWidth = 1920f;
+        float referenceHeight = 1080f;
+        float fit = Mathf.Min(Screen.width / referenceWidth, Screen.height / referenceHeight);
+        float offsetX = (Screen.width - referenceWidth * fit) * 0.5f;
+        float offsetY = (Screen.height - referenceHeight * fit) * 0.5f;
+
+        Rect R(float x, float y, float width, float height)
+        {
+            return new Rect(offsetX + x * fit, offsetY + y * fit, width * fit, height * fit);
+        }
+
+        DrawResultScoreBackdrop(new Rect(0f, 0f, Screen.width, Screen.height), fit);
+
+        Rect panelRect = R(860f, 118f, 900f, 800f);
+        DrawNeonPanel(panelRect, new Color(0.80f, 0.60f, 1f, 0.46f), new Color(1f, 1f, 1f, 0.82f), fit, 1f);
+        DrawNeonPanel(R(912f, 182f, 796f, 682f), new Color(0.95f, 0.80f, 1f, 0.18f), new Color(1f, 1f, 1f, 0.68f), fit, 0.78f);
+
+        GUIStyle title = CreateSongSelectStyle(48f, fit, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        DrawOutlinedLabel(R(980f, 120f, 600f, 74f), "FINAL SCORE", title, new Color(0.58f, 0.08f, 0.86f, 0.95f), 3f * fit);
+
+        Texture2D rankTexture = GetResultRankTexture(CalculateResultRank());
+        DrawResultTexture(rankTexture, R(1190f, 220f, 330f, 260f), WhiteColor);
+
+        float rowY = 512f;
+        DrawResultCountRow(R(1048f, rowY, 254f, 74f), R(1374f, rowY - 4f, 250f, 82f), resultComboTexture, GetResultComboCount(), fit, 62f);
+        DrawResultCountRow(R(1062f, rowY + 108f, 242f, 54f), R(1386f, rowY + 96f, 230f, 72f), resultPerfectTexture, perfectCount, fit, 48f);
+        DrawResultCountRow(R(1062f, rowY + 164f, 210f, 54f), R(1386f, rowY + 152f, 230f, 72f), resultGreatTexture, greatCount, fit, 48f);
+        DrawResultCountRow(R(1062f, rowY + 220f, 172f, 54f), R(1386f, rowY + 208f, 230f, 72f), resultGoodTexture, goodCount, fit, 48f);
+        DrawResultCountRow(R(1062f, rowY + 276f, 172f, 54f), R(1386f, rowY + 264f, 230f, 72f), resultMissTexture, missCount, fit, 48f);
+
+        GUIStyle songStyle = CreateSongSelectStyle(24f, fit, TextAnchor.MiddleCenter, FontStyle.Bold, new Color(0.92f, 0.96f, 1f, 0.94f));
+        GUI.Label(R(930f, 836f, 760f, 44f), GetDisplaySongTitle(generatedSongLabel), songStyle);
+
+        if (DrawPauseMenuButton(R(1040f, 930f, 300f, 82f), "REPLAY", new Color(0.52f, 0.12f, 0.92f, 1f), new Color(1f, 0.26f, 0.95f, 1f), fit))
+        {
+            ReplayCurrentSongFromResult();
+        }
+
+        if (DrawPauseMenuButton(R(1388f, 930f, 330f, 82f), "SONG SELECT", new Color(0.08f, 0.68f, 0.28f, 1f), new Color(0.58f, 1f, 0.42f, 1f), fit))
+        {
+            ReturnToSongSelectionFromResult();
+        }
+
+        if (DrawResultBackButton(R(1748f, 900f, 128f, 128f)))
+        {
+            ReturnToSongSelectionFromResult();
+        }
+    }
+
+    private bool DrawResultBackButton(Rect rect)
+    {
+        Color previous = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, GUI.enabled ? 0.96f : 0.45f);
+        if (resultBackButtonTexture != null)
+        {
+            GUI.DrawTexture(rect, resultBackButtonTexture, ScaleMode.ScaleToFit, true);
+        }
+        else
+        {
+            DrawNeonPanel(rect, new Color(0.62f, 0.12f, 0.82f, 0.95f), new Color(1f, 0.70f, 1f, 0.92f), Mathf.Max(0.7f, rect.width / 128f));
+            GUIStyle style = CreateSongSelectStyle(44f, Mathf.Max(0.7f, rect.width / 128f), TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+            DrawOutlinedLabel(rect, "<", style, new Color(0.18f, 0.02f, 0.30f, 0.92f), 2f);
+        }
+
+        GUI.color = previous;
+        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+    }
+
+    private void DrawResultScoreBackdrop(Rect rect, float scale)
+    {
+        DrawRect(rect, new Color(0.34f, 0.10f, 0.74f, 1f));
+        DrawRect(new Rect(rect.x, rect.y, rect.width, rect.height * 0.48f), new Color(0.52f, 0.22f, 1f, 0.58f));
+        DrawRect(new Rect(rect.x, rect.y + rect.height * 0.54f, rect.width, rect.height * 0.46f), new Color(1f, 0.58f, 0.94f, 0.34f));
+        DrawRect(new Rect(rect.x, rect.y + rect.height * 0.90f, rect.width, rect.height * 0.10f), new Color(1f, 0.80f, 1f, 0.24f));
+
+        GUIStyle musicStyle = CreateSongSelectStyle(260f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, new Color(0.98f, 0.16f, 0.72f, 0.18f));
+        GUI.Label(new Rect(rect.x + 80f * scale, rect.y + 210f * scale, 620f * scale, 520f * scale), "MUSIC", musicStyle);
+        GUIStyle glowStyle = CreateSongSelectStyle(150f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, new Color(0.10f, 0.92f, 1f, 0.14f));
+        GUI.Label(new Rect(rect.x + 230f * scale, rect.y + 530f * scale, 520f * scale, 360f * scale), "*", glowStyle);
+    }
+
+    private void DrawResultCountRow(Rect labelRect, Rect numberRect, Texture2D labelTexture, int value, float scale, float numberSize)
+    {
+        DrawResultTexture(labelTexture, labelRect, WhiteColor);
+        DrawResultNumber(numberRect, value, scale, numberSize);
+    }
+
+    private static void DrawResultTexture(Texture2D texture, Rect rect, Color color)
+    {
+        if (texture == null)
+        {
+            return;
+        }
+
+        Color previous = GUI.color;
+        GUI.color = color;
+        GUI.DrawTexture(rect, texture, ScaleMode.ScaleToFit, true);
+        GUI.color = previous;
+    }
+
+    private void DrawResultNumber(Rect rect, int value, float scale, float size)
+    {
+        GUIStyle style = CreateSongSelectStyle(size, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        string text = FormatResultNumber(value);
+        DrawOutlinedLabel(rect, text, style, new Color(0.92f, 0.16f, 1f, 0.92f), 2.4f * scale);
+    }
+
+    private static string FormatResultNumber(int value)
+    {
+        string text = Mathf.Max(0, value).ToString("0000");
+        char[] characters = text.ToCharArray();
+        string[] digits = new string[characters.Length];
+        for (int i = 0; i < characters.Length; i++)
+        {
+            digits[i] = characters[i].ToString();
+        }
+
+        return string.Join(" ", digits);
+    }
+
+    private void ShowResultScoreScene()
+    {
+        ResetPauseState();
+        resultScreenVisible = true;
+        judgementKind = JudgementKind.None;
+        judgementVisibleUntil = 0f;
+        if (musicSource != null)
+        {
+            musicSource.Stop();
+        }
+
+        murekaStatus = "Song finished. Result rank: " + CalculateResultRank() + ".";
+    }
+
+    private void ReplayCurrentSongFromResult()
+    {
+        resultScreenVisible = false;
+        if (musicSource != null)
+        {
+            musicSource.Stop();
+        }
+
+        RestartChart();
+        murekaStatus = "Replaying " + generatedSongLabel + ".";
+    }
+
+    private void ReturnToSongSelectionFromResult()
+    {
+        resultScreenVisible = false;
+        ReturnToSongSelectionFromPause();
+    }
+
+    private void RegisterResultJudgement(JudgementKind kind)
+    {
+        switch (kind)
+        {
+            case JudgementKind.Perfect:
+                perfectCount++;
+                break;
+            case JudgementKind.Great:
+                greatCount++;
+                break;
+            case JudgementKind.Good:
+                goodCount++;
+                break;
+            case JudgementKind.Miss:
+                missCount++;
+                break;
+        }
+    }
+
+    private void ResetResultStats()
+    {
+        perfectCount = 0;
+        greatCount = 0;
+        goodCount = 0;
+        missCount = 0;
+    }
+
+    private int GetResultComboCount()
+    {
+        return perfectCount + greatCount + goodCount;
+    }
+
+    private int GetResultTotalCount()
+    {
+        return Mathf.Max(0, perfectCount + greatCount + goodCount + missCount);
+    }
+
+    private ResultRank CalculateResultRank()
+    {
+        int total = GetResultTotalCount();
+        if (total <= 0)
+        {
+            return ResultRank.D;
+        }
+
+        float perfectRatio = perfectCount / (float)total;
+        float greatOrBetterRatio = (perfectCount + greatCount) / (float)total;
+        float hitRatio = GetResultComboCount() / (float)total;
+        float missRatio = missCount / (float)total;
+        if (perfectRatio >= 0.50f && greatOrBetterRatio >= 0.75f && hitRatio >= 0.85f && missRatio <= 0.15f)
+        {
+            return ResultRank.S;
+        }
+
+        float weightedScore = (perfectCount + greatCount * 0.78f + goodCount * 0.48f) / total;
+        if (weightedScore >= 0.82f && hitRatio >= 0.80f && missRatio <= 0.22f)
+        {
+            return ResultRank.A;
+        }
+
+        if (weightedScore >= 0.66f && hitRatio >= 0.64f && missRatio <= 0.36f)
+        {
+            return ResultRank.B;
+        }
+
+        if (weightedScore >= 0.46f || hitRatio >= 0.44f)
+        {
+            return ResultRank.C;
+        }
+
+        return ResultRank.D;
+    }
+
+    private Texture2D GetResultRankTexture(ResultRank rank)
+    {
+        switch (rank)
+        {
+            case ResultRank.S:
+                return resultRankSTexture;
+            case ResultRank.A:
+                return resultRankATexture;
+            case ResultRank.B:
+                return resultRankBTexture;
+            case ResultRank.C:
+                return resultRankCTexture;
+            default:
+                return resultRankDTexture;
+        }
     }
 
     private float GetSongElapsedSeconds()
@@ -1788,8 +2142,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         notes.Clear();
         combo = 0;
         chartFinished = false;
+        resultScreenVisible = false;
         judgementKind = JudgementKind.None;
         judgementVisibleUntil = 0f;
+        ResetResultStats();
         songSelectionVisible = true;
         murekaStatus = "Select a local song to play. Difficulty: " + GetDifficultyPreset().Label + ".";
     }
@@ -1915,7 +2271,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             bool selected = i == selectedLocalSongIndex;
             DrawRect(rowRect, selected ? new Color(0.08f, 0.42f, 1f, 0.72f) : new Color(0f, 0f, 0f, 0.24f));
 
-            string songName = entry == null || string.IsNullOrWhiteSpace(entry.Name) ? "Missing Song" : entry.Name;
+            string songName = entry == null || string.IsNullOrWhiteSpace(entry.Name) ? "Missing Song" : GetDisplaySongTitle(entry.Name);
             GUI.Label(new Rect(rowRect.x + 8f * scale, rowRect.y, rowRect.width - 86f * scale, rowRect.height), songName, songLabelStyle);
 
             string buttonText = selected && musicSource != null && musicSource.isPlaying ? "PLAYING" : "PLAY";
@@ -1970,6 +2326,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             {
                 isMurekaPromptWindowVisible = false;
                 isEditingPrompt = false;
+                UpdatePromptImeState(false, Rect.zero, 1f);
             }
 
             return;
@@ -1984,6 +2341,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     if (keyboard.escapeKey.wasPressedThisFrame)
                     {
                         isMurekaPromptWindowVisible = false;
+                        UpdatePromptImeState(false, Rect.zero, 1f);
                     }
 
                     return;
@@ -2200,6 +2558,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         bestCombo = Mathf.Max(bestCombo, combo);
         score += points + combo * 12;
         successfulHitCount++;
+        RegisterResultJudgement(judgement);
         note.Judged = true;
         PlayHitFeedback(note);
         FlashJudgement(judgement);
@@ -2216,6 +2575,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void ApplyMiss(Note note)
     {
         combo = 0;
+        RegisterResultJudgement(JudgementKind.Miss);
         note.Judged = true;
         PlayCharacterMissReaction();
         FlashJudgement(JudgementKind.Miss);
@@ -2367,7 +2727,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (allJudged && !chartFinished && now > songStartDspTime + chartDuration + 1.1f)
         {
             chartFinished = true;
-            murekaStatus = "Song finished. Open SONGS to replay or choose another track.";
+            ShowResultScoreScene();
         }
     }
 
@@ -2568,6 +2928,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         score = 0;
         combo = 0;
         successfulHitCount = 0;
+        ResetResultStats();
         displayedHeartFill = 0f;
         displayedColorRecovery = 0f;
         ApplyWorldColorRecovery(0f);
@@ -2580,6 +2941,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         songStartDspTime = AudioSettings.dspTime + MusicLeadIn;
         chartDuration = Mathf.Max(generatedSongLength, chart[chart.Count - 1].Time);
         chartFinished = false;
+        resultScreenVisible = false;
 
         for (int i = 0; i < chart.Count; i++)
         {
@@ -2936,8 +3298,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             CreateStageDecorations(stage.transform);
         }
         RegisterColorRecoveryTargets(stage.transform);
-        CreatePromptLane(stage.transform);
-
         GameObject hitLine = new GameObject("Blinking Search Cursor");
         hitLine.transform.SetParent(stage.transform, false);
         hitLine.transform.position = new Vector3(HitX, LaneY, 0f);
@@ -4503,7 +4863,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             byte[] body = Encoding.UTF8.GetBytes(requestBody);
             request.uploadHandler = new UploadHandlerRaw(body);
             request.downloadHandler = new DownloadHandlerBuffer();
-            request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("Content-Type", "application/json; charset=utf-8");
             request.timeout = 900;
 
             yield return request.SendWebRequest();
@@ -4568,8 +4928,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         chart.Clear();
         chartDuration = 0f;
         chartFinished = false;
+        resultScreenVisible = false;
         judgementKind = JudgementKind.None;
         judgementVisibleUntil = 0f;
+        ResetResultStats();
     }
 
     private string GetCurrentMurekaPrompt()
@@ -5406,6 +5768,33 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         ConfigureJudgementTexture(goodJudgementTexture);
         ConfigureJudgementTexture(greatJudgementTexture);
         ConfigureJudgementTexture(perfectJudgementTexture);
+    }
+
+    private void LoadResultScoreTextures()
+    {
+        resultRankSTexture = Resources.Load<Texture2D>("Score/S");
+        resultRankATexture = Resources.Load<Texture2D>("Score/A");
+        resultRankBTexture = Resources.Load<Texture2D>("Score/B");
+        resultRankCTexture = Resources.Load<Texture2D>("Score/C");
+        resultRankDTexture = Resources.Load<Texture2D>("Score/D");
+        resultComboTexture = Resources.Load<Texture2D>("Score/combo");
+        resultPerfectTexture = Resources.Load<Texture2D>("Score/perfect");
+        resultGreatTexture = Resources.Load<Texture2D>("Score/great");
+        resultGoodTexture = Resources.Load<Texture2D>("Score/good");
+        resultMissTexture = Resources.Load<Texture2D>("Score/miss");
+        resultBackButtonTexture = Resources.Load<Texture2D>("Score/back");
+
+        ConfigureJudgementTexture(resultRankSTexture);
+        ConfigureJudgementTexture(resultRankATexture);
+        ConfigureJudgementTexture(resultRankBTexture);
+        ConfigureJudgementTexture(resultRankCTexture);
+        ConfigureJudgementTexture(resultRankDTexture);
+        ConfigureJudgementTexture(resultComboTexture);
+        ConfigureJudgementTexture(resultPerfectTexture);
+        ConfigureJudgementTexture(resultGreatTexture);
+        ConfigureJudgementTexture(resultGoodTexture);
+        ConfigureJudgementTexture(resultMissTexture);
+        ConfigureJudgementTexture(resultBackButtonTexture);
     }
 
     private static void ConfigureJudgementTexture(Texture2D texture)
