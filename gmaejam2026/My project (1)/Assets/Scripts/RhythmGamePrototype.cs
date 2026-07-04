@@ -407,6 +407,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private float songCarouselOffset;
     private float songCarouselVelocity;
     private float songSelectIntroStartTime = -1f;
+    private float gameplayIntroStartTime = -999f;
     private bool chartFinished;
     private float lastMurekaBackendStartAttempt = -999f;
     private int score;
@@ -604,8 +605,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
+        float gameplayIntroTime = Mathf.Max(0f, Time.unscaledTime - gameplayIntroStartTime);
+        float comboIntro = IntroProgress(gameplayIntroTime, 0f, 0.48f);
+        float comboEase = EaseOutBackStrong(comboIntro);
         Rect comboNumberRect = new Rect((Screen.width - 300f * scale) * 0.5f, 30f * scale, 300f * scale, 76f * scale);
         Rect comboLabelRect = new Rect(comboNumberRect.x, 88f * scale, comboNumberRect.width, 32f * scale);
+        Vector2 comboPivot = new Vector2(Screen.width * 0.5f, 76f * scale);
+        Matrix4x4 comboMatrix = GUI.matrix;
+        Color comboColor = GUI.color;
+        GUI.matrix = Matrix4x4.Translate(new Vector3(0f, (1f - EaseOutCubic(comboIntro)) * -150f * scale, 0f)) * GUI.matrix;
+        GUIUtility.ScaleAroundPivot(Vector2.one * Mathf.LerpUnclamped(0.46f, 1f, comboEase), comboPivot);
+        GUI.color = new Color(1f, 1f, 1f, comboColor.a * Mathf.Clamp01(comboIntro * 2.5f));
         DrawComboNumber(comboNumberRect, combo, comboNumberStyle, new Color(0.12f, 0.04f, 0.16f, 1f), 4f * scale);
         DrawContinuousGradientOutlinedLabel(
             comboLabelRect,
@@ -615,6 +625,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             3f * scale,
             new Color(1f, 0.24f, 0.72f, 1f),
             new Color(0.08f, 0.94f, 1f, 1f));
+        GUI.matrix = comboMatrix;
+        GUI.color = comboColor;
 
         if (Time.time <= judgementVisibleUntil)
         {
@@ -626,10 +638,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawMurekaControls(scale);
         }
 
-        DrawGameplayHud(scale);
+        DrawGameplayHud(scale, gameplayIntroTime);
         if (!isGamePaused)
         {
-            DrawPauseButton(scale);
+            DrawPauseButton(scale, IntroProgress(gameplayIntroTime, 0.38f, 0.42f));
         }
         else
         {
@@ -688,12 +700,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float introTime = Time.unscaledTime - songSelectIntroStartTime;
         float IntroP(float delay)
         {
-            return Mathf.Clamp01((introTime - delay) / 0.34f);
+            return IntroProgress(introTime, delay, 0.52f);
         }
 
         Rect IntroRise(Rect rect, float delay)
         {
-            rect.y += (1f - EaseOutBack(IntroP(delay))) * 220f * fit;
+            float progress = IntroP(delay);
+            rect.y += (1f - EaseOutCubic(progress)) * 390f * fit;
+            rect = ScaleRectAroundCenter(rect, Mathf.LerpUnclamped(0.58f, 1f, EaseOutBackStrong(progress)));
             return rect;
         }
 
@@ -707,7 +721,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUIStyle statusStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(0.84f, 0.95f, 1f, 0.86f));
 
         Matrix4x4 introTitleMatrix = GUI.matrix;
-        GUI.matrix = Matrix4x4.Translate(new Vector3(0f, (EaseOutBack(IntroP(0f)) - 1f) * 220f * fit, 0f)) * GUI.matrix;
+        float titleIntro = IntroP(0f);
+        float titleEase = EaseOutBackStrong(titleIntro);
+        GUI.matrix = Matrix4x4.Translate(new Vector3(0f, (1f - EaseOutCubic(titleIntro)) * -300f * fit, 0f)) * GUI.matrix;
+        GUIUtility.ScaleAroundPivot(Vector2.one * Mathf.LerpUnclamped(0.60f, 1f, titleEase), R(536f, 0f, 600f, 84f).center);
         if (uiSelectMusicTitle != null)
         {
             GUI.DrawTexture(R(536f, 0f, 600f, 84f), uiSelectMusicTitle, ScaleMode.StretchToFill);
@@ -748,10 +765,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         float introInfoP = IntroP(0.24f);
         Matrix4x4 introInfoMatrix = GUI.matrix;
         Color introInfoColor = GUI.color;
-        GUI.matrix = Matrix4x4.Translate(new Vector3(0f, (1f - EaseOutCubic(introInfoP)) * 160f * fit, 0f)) * GUI.matrix;
-        GUI.color = new Color(1f, 1f, 1f, introInfoColor.a * Mathf.Clamp01(introInfoP * 1.8f));
-
         Rect infoRect = R(352f, 598f, 982f, 206f);
+        GUI.matrix = Matrix4x4.Translate(new Vector3(0f, (1f - EaseOutCubic(introInfoP)) * 300f * fit, 0f)) * GUI.matrix;
+        GUIUtility.ScaleAroundPivot(Vector2.one * Mathf.LerpUnclamped(0.74f, 1f, EaseOutBackStrong(introInfoP)), infoRect.center);
+        GUI.color = new Color(1f, 1f, 1f, introInfoColor.a * Mathf.Clamp01(introInfoP * 2.2f));
+
         SongAnalysis previewAnalysis = GetSelectedSongPreviewAnalysis();
         float previewBpm = previewAnalysis != null ? previewAnalysis.Bpm : generatedBpm;
         string infoDescription = hasSongs
@@ -971,6 +989,60 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         return 1f + c3 * t * t * t + c1 * t * t;
     }
 
+    private static float EaseOutBackStrong(float t)
+    {
+        const float c1 = 2.65f;
+        const float c3 = c1 + 1f;
+        t = Mathf.Clamp01(t) - 1f;
+        return 1f + c3 * t * t * t + c1 * t * t;
+    }
+
+    private static float IntroProgress(float elapsed, float delay, float duration)
+    {
+        return Mathf.Clamp01((elapsed - delay) / Mathf.Max(0.01f, duration));
+    }
+
+    private static Rect ScaleRectAroundCenter(Rect rect, float scale)
+    {
+        scale = Mathf.Max(0.01f, scale);
+        return new Rect(
+            rect.center.x - rect.width * scale * 0.5f,
+            rect.center.y - rect.height * scale * 0.5f,
+            rect.width * scale,
+            rect.height * scale);
+    }
+
+    private static void DrawCardEntranceBurst(Rect cardRect, float intensity, float scale)
+    {
+        intensity = Mathf.Clamp01(intensity);
+        if (intensity <= 0.001f)
+        {
+            return;
+        }
+
+        Matrix4x4 baseMatrix = GUI.matrix;
+        Color baseColor = GUI.color;
+        Vector2 pivot = cardRect.center;
+        float innerRadius = Mathf.Max(cardRect.width, cardRect.height) * 0.47f;
+        float rayLength = (45f + 105f * intensity) * scale;
+        float rayThickness = Mathf.Max(2f, 7f * intensity * scale);
+        for (int i = 0; i < 12; i++)
+        {
+            GUI.matrix = baseMatrix;
+            GUIUtility.RotateAroundPivot(i * 30f + 15f, pivot);
+            GUI.color = i % 2 == 0
+                ? new Color(0.12f, 0.95f, 1f, baseColor.a * intensity * 0.72f)
+                : new Color(1f, 0.24f, 0.86f, baseColor.a * intensity * 0.64f);
+            GUI.DrawTexture(
+                new Rect(pivot.x + innerRadius, pivot.y - rayThickness * 0.5f, rayLength, rayThickness),
+                Texture2D.whiteTexture,
+                ScaleMode.StretchToFill);
+        }
+
+        GUI.matrix = baseMatrix;
+        GUI.color = baseColor;
+    }
+
     private static float EaseOutCubic(float t)
     {
         t = 1f - t;
@@ -1124,26 +1196,33 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             Color accent = SongCardAccents[songIndex < 0 ? 0 : songIndex % SongCardAccents.Length];
             float centerX = (x + width * 0.5f) * stretchX;
             Rect rect = new Rect(centerX - width * fit * 0.5f, offsetY + y * fit, width * fit, height * fit);
+            Matrix4x4 cardMatrix = GUI.matrix;
 
-            // Entrance: the focused card pops up from small, the side cards
-            // slide in from beyond the screen edges.
+            // Entrance: the focused card launches up with a slight twist and
+            // a neon impact burst. Side cards arrive from below and outside.
             if (slot == 0 && introCenterP < 1f)
             {
-                float pop = Mathf.LerpUnclamped(0.35f, 1f, EaseOutBack(introCenterP));
-                rect = new Rect(
-                    rect.center.x - rect.width * pop * 0.5f,
-                    rect.center.y - rect.height * pop * 0.5f,
-                    rect.width * pop,
-                    rect.height * pop);
-                alpha *= Mathf.Clamp01(introCenterP * 2.5f);
+                float travel = EaseOutCubic(introCenterP);
+                float pop = Mathf.LerpUnclamped(0.12f, 1f, EaseOutBackStrong(introCenterP));
+                rect.y += (1f - travel) * 470f * fit;
+                rect = ScaleRectAroundCenter(rect, pop);
+                float burst = Mathf.Sin(Mathf.Clamp01((introCenterP - 0.18f) / 0.82f) * Mathf.PI);
+                DrawCardEntranceBurst(rect, burst, fit);
+                GUIUtility.RotateAroundPivot(-9f * (1f - travel), rect.center);
+                alpha *= Mathf.Clamp01(introCenterP * 3.2f);
             }
             else if (slot != 0 && introSideP < 1f)
             {
-                rect.x += Mathf.Sign(slot) * (1f - EaseOutBack(introSideP)) * 430f * fit;
-                alpha *= Mathf.Clamp01(introSideP * 2.5f);
+                float travel = EaseOutCubic(introSideP);
+                rect.x += Mathf.Sign(slot) * (1f - travel) * 560f * fit;
+                rect.y += (1f - travel) * 310f * fit;
+                rect = ScaleRectAroundCenter(rect, Mathf.LerpUnclamped(0.46f, 1f, EaseOutBackStrong(introSideP)));
+                GUIUtility.RotateAroundPivot(Mathf.Sign(slot) * 7f * (1f - travel), rect.center);
+                alpha *= Mathf.Clamp01(introSideP * 2.8f);
             }
 
             DrawSongCard(rect, songName, accent, selection, alpha, uiScale);
+            GUI.matrix = cardMatrix;
         }
     }
 
@@ -1207,9 +1286,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         // every card size instead of drifting with the clamped ui scale.
         Rect labelRect = new Rect(
             rect.x + rect.width * 0.09f,
-            rect.y + rect.height * 0.68f,
+            rect.y + rect.height * 0.615f,
             rect.width * 0.82f,
-            rect.height * 0.20f);
+            rect.height * 0.18f);
         float textScale = Mathf.Lerp(21f / 44f, 1f, selection);
         Rect textRect = new Rect(
             labelRect.center.x - labelRect.width / textScale * 0.5f,
@@ -1794,10 +1873,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         return FindEnvelopePeakTimeLooped(analysis.OnsetStrength, analysis.EnvelopeRate, cursorTime, peakRadius);
     }
 
-    private void DrawGameplayHud(float scale)
+    private void DrawGameplayHud(float scale, float introTime)
     {
+        float heartIntro = IntroProgress(introTime, 0.08f, 0.48f);
         float heartSize = 104f * scale;
         Rect heartRect = new Rect(18f * scale, Screen.height - heartSize - 12f * scale, heartSize, heartSize);
+        heartRect.x -= (1f - EaseOutCubic(heartIntro)) * 170f * scale;
+        heartRect = ScaleRectAroundCenter(heartRect, Mathf.LerpUnclamped(0.30f, 1f, EaseOutBackStrong(heartIntro)));
+        Color hudColor = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, hudColor.a * Mathf.Clamp01(heartIntro * 2.6f));
         DrawUiSheetRegion(heartRect, 851, 606, 552, 527);
 
         if (displayedHeartFill > 0.001f)
@@ -1812,30 +1896,40 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             DrawUiSheetRegionBottomFill(filledHeartRect, 1465, 685, 400, 386, displayedHeartFill);
         }
 
+        GUI.color = hudColor;
+
+        float progressIntro = IntroProgress(introTime, 0.24f, 0.52f);
         float progressWidth = Mathf.Min(520f * scale, Screen.width * 0.42f);
         float progressHeight = 13f * scale;
         float progressX = (Screen.width - progressWidth) * 0.5f;
-        float progressY = Screen.height - 27f * scale;
+        float progressY = Screen.height - 27f * scale + (1f - EaseOutCubic(progressIntro)) * 105f * scale;
+        Rect progressRect = ScaleRectAroundCenter(
+            new Rect(progressX, progressY, progressWidth, progressHeight),
+            Mathf.LerpUnclamped(0.18f, 1f, EaseOutBackStrong(progressIntro)));
         float progress = 0f;
         if (currentSongClip != null && currentSongClip.length > 0.01f)
         {
             progress = Mathf.Clamp01(GetSongElapsedSeconds() / currentSongClip.length);
         }
 
-        DrawRect(new Rect(progressX - 3f * scale, progressY - 3f * scale, progressWidth + 6f * scale, progressHeight + 6f * scale), new Color(0.16f, 0.035f, 0.28f, 0.92f));
-        DrawRect(new Rect(progressX, progressY, progressWidth, progressHeight), new Color(0.34f, 0.14f, 0.58f, 0.9f));
-        DrawRect(new Rect(progressX, progressY, progressWidth * progress, progressHeight), new Color(1f, 0.25f, 0.82f, 1f));
+        DrawRect(new Rect(progressRect.x - 3f * scale, progressRect.y - 3f * scale, progressRect.width + 6f * scale, progressRect.height + 6f * scale), new Color(0.16f, 0.035f, 0.28f, 0.92f));
+        DrawRect(progressRect, new Color(0.34f, 0.14f, 0.58f, 0.9f));
+        DrawRect(new Rect(progressRect.x, progressRect.y, progressRect.width * progress, progressRect.height), new Color(1f, 0.25f, 0.82f, 1f));
 
-        smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.82f);
-        GUI.Label(new Rect(18f * scale, 16f * scale, 430f * scale, 26f * scale), GetDisplaySongTitle(generatedSongLabel) + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
-        GUI.Label(new Rect(126f * scale, Screen.height - 56f * scale, 180f * scale, 26f * scale), "BEST " + bestCombo + "x", smallStyle);
+        float songInfoIntro = IntroProgress(introTime, 0.30f, 0.44f);
+        smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.82f * Mathf.Clamp01(songInfoIntro * 2.4f));
+        GUI.Label(new Rect(18f * scale, 16f * scale - (1f - EaseOutCubic(songInfoIntro)) * 72f * scale, 430f * scale, 26f * scale), GetDisplaySongTitle(generatedSongLabel) + "  " + generatedBpm.ToString("0.0") + " BPM", smallStyle);
+        smallStyle.normal.textColor = new Color(1f, 1f, 1f, 0.82f * Mathf.Clamp01(heartIntro * 2.4f));
+        GUI.Label(new Rect(126f * scale - (1f - EaseOutCubic(heartIntro)) * 140f * scale, Screen.height - 56f * scale, 180f * scale, 26f * scale), "BEST " + bestCombo + "x", smallStyle);
 
         GUIStyle progressLabelStyle = CreateSongSelectStyle(15f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
-        Rect progressNameRect = new Rect(progressX - 118f * scale, progressY - 11f * scale, 104f * scale, 34f * scale);
-        Rect progressPercentRect = new Rect(progressX + progressWidth + 14f * scale, progressY - 11f * scale, 74f * scale, 34f * scale);
+        Rect progressNameRect = new Rect(progressRect.x - 118f * scale, progressRect.center.y - 17f * scale, 104f * scale, 34f * scale);
+        Rect progressPercentRect = new Rect(progressRect.xMax + 14f * scale, progressRect.center.y - 17f * scale, 74f * scale, 34f * scale);
         Color progressOutline = new Color(0.16f, 0.035f, 0.28f, 0.92f);
+        GUI.color = new Color(1f, 1f, 1f, hudColor.a * Mathf.Clamp01(progressIntro * 2.3f));
         DrawOutlinedLabel(progressNameRect, "곡 진행도", progressLabelStyle, progressOutline, 2f * scale);
         DrawOutlinedLabel(progressPercentRect, Mathf.RoundToInt(progress * 100f) + "%", progressLabelStyle, progressOutline, 2f * scale);
+        GUI.color = hudColor;
     }
 
     private static void EnsurePauseUiTextures()
@@ -1855,18 +1949,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         uiPauseGoing = Resources.Load<Texture2D>("UI/Pause/going");
     }
 
-    private void DrawPauseButton(float scale)
+    private void DrawPauseButton(float scale, float introProgress = 1f)
     {
         EnsurePauseUiTextures();
         Rect rect;
         if (uiPauseStop != null)
         {
             rect = new Rect(Screen.width - 70f * scale, 13f * scale, 54f * scale, 54f * scale);
+            rect.x += (1f - EaseOutCubic(introProgress)) * 120f * scale;
+            rect = ScaleRectAroundCenter(rect, Mathf.LerpUnclamped(0.42f, 1f, EaseOutBackStrong(introProgress)));
             GUI.DrawTexture(rect, uiPauseStop, ScaleMode.StretchToFill);
         }
         else
         {
             rect = new Rect(Screen.width - 66f * scale, 15f * scale, 48f * scale, 44f * scale);
+            rect.x += (1f - EaseOutCubic(introProgress)) * 120f * scale;
+            rect = ScaleRectAroundCenter(rect, Mathf.LerpUnclamped(0.42f, 1f, EaseOutBackStrong(introProgress)));
             DrawNeonPanel(rect, new Color(0.02f, 0.05f, 0.22f, 0.82f), new Color(0.96f, 0.72f, 0.12f, 0.92f), scale);
 
             float barWidth = 8f * scale;
@@ -3306,6 +3404,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
+        gameplayIntroStartTime = Time.unscaledTime;
         songStartDspTime = AudioSettings.dspTime + MusicLeadIn;
         chartDuration = Mathf.Max(generatedSongLength, chart[chart.Count - 1].Time);
         chartFinished = false;
