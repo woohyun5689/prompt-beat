@@ -167,6 +167,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float MinLongNoteGap = 0.95f;
     private const float MusicLeadIn = 2.1f;
     private const float MinimumLoadingScreenDuration = 2.5f;
+    private const float GameplayCameraSize = 5f;
+    private const float SongSelectCameraSize = 3.6f;
     private const float HitFxLifetime = 0.28f;
     private const float LongNoteScratchDuration = 0.22f;
     private const float LongNoteTailDistance = 2.74f;
@@ -298,6 +300,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Sprite loadingGradientSprite;
     private static Texture2D whiteTexture;
     private static Texture2D uiSheetTexture;
+    private static Texture2D uiSelectMusicTitle;
+    private static Texture2D uiSongboxBoard;
+    private static Texture2D uiSongboxFrame;
+    private static Texture2D uiNextSongButton;
+    private static Texture2D uiLevelButton;
+    private static Texture2D uiLevelSelectButton;
+    private static Texture2D uiPlayButton;
+    private static Texture2D uiSongGenButton;
+    private static Texture2D uiSongExpPanel;
     private static Sprite[] redTapSprites;
     private static Sprite[] blueTapSprites;
     private static Sprite redLongSprite;
@@ -361,6 +372,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private RhythmDifficulty selectedDifficulty = RhythmDifficulty.Normal;
     private bool songSelectionVisible = true;
     private bool worldHiddenForSongSelect;
+    private float songSelectBackdropDrop;
     private float songCarouselOffset;
     private float songCarouselVelocity;
     private bool chartFinished;
@@ -436,6 +448,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         ReadInput();
         UpdateSongSelectWorldVisibility();
+        UpdateSongSelectCamera();
         UpdateSongCarousel();
         UpdateNotes();
         UpdateJudgeRing();
@@ -519,23 +532,48 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawGameplayHud(scale);
     }
 
+    private static void EnsureSongSelectUiTextures()
+    {
+        // Reloaded whenever the board texture is missing so a late import
+        // (or domain reload) picks the art up; every draw site falls back to
+        // the old procedural look while a texture is absent.
+        if (uiSongboxBoard != null)
+        {
+            return;
+        }
+
+        uiSelectMusicTitle = Resources.Load<Texture2D>("UI/select_music_ui");
+        uiSongboxBoard = Resources.Load<Texture2D>("UI/songbox_board");
+        uiSongboxFrame = Resources.Load<Texture2D>("UI/songbox_board_frame");
+        uiNextSongButton = Resources.Load<Texture2D>("UI/next_song_button");
+        uiLevelButton = Resources.Load<Texture2D>("UI/level_button");
+        uiLevelSelectButton = Resources.Load<Texture2D>("UI/level_select_button");
+        uiPlayButton = Resources.Load<Texture2D>("UI/play_button");
+        uiSongGenButton = Resources.Load<Texture2D>("UI/song_gen_button");
+        uiSongExpPanel = Resources.Load<Texture2D>("UI/song_exp");
+    }
+
     private void DrawSongSelectScene(float scale)
     {
+        EnsureSongSelectUiTextures();
         EnsureSelectedSongIndex();
 
         float referenceWidth = 1672f;
         float referenceHeight = 941f;
         float fit = Mathf.Min(Screen.width / referenceWidth, Screen.height / referenceHeight);
-        float offsetX = (Screen.width - referenceWidth * fit) * 0.5f;
+        // Horizontal positions stretch to the real screen width so the layout
+        // reaches the edges on wide views instead of leaving pillarbox margins.
+        float stretchX = Screen.width / referenceWidth;
         float offsetY = (Screen.height - referenceHeight * fit) * 0.5f;
         float uiScale = Mathf.Clamp(fit, 0.62f, 1.28f);
 
         Rect R(float x, float y, float width, float height)
         {
-            return new Rect(offsetX + x * fit, offsetY + y * fit, width * fit, height * fit);
+            float centerX = (x + width * 0.5f) * stretchX;
+            return new Rect(centerX - width * fit * 0.5f, offsetY + y * fit, width * fit, height * fit);
         }
 
-        DrawSongSelectBackdrop(R(0f, 0f, referenceWidth, referenceHeight));
+        DrawSongSelectBackdrop(new Rect(0f, 0f, Screen.width, Screen.height));
 
         GUIStyle titleTextStyle = CreateSongSelectStyle(52f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, new Color(1f, 0.93f, 0.16f, 1f));
         GUIStyle infoTitleStyle = CreateSongSelectStyle(32f, uiScale, TextAnchor.MiddleLeft, FontStyle.Bold, WhiteColor);
@@ -544,25 +582,32 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         promptTextStyle.wordWrap = true;
         GUIStyle statusStyle = CreateSongSelectStyle(17f, uiScale, TextAnchor.MiddleRight, FontStyle.Bold, new Color(0.84f, 0.95f, 1f, 0.86f));
 
-        Rect titleRect = R(14f, 18f, 555f, 100f);
-        DrawNeonPanel(titleRect, new Color(0.02f, 0.07f, 0.34f, 0.96f), new Color(0.12f, 0.92f, 1f, 0.82f), fit);
-        DrawOutlinedLabel(new Rect(titleRect.x + 34f * fit, titleRect.y + 5f * fit, titleRect.width - 70f * fit, titleRect.height - 10f * fit), "SONG SELECT", titleTextStyle, new Color(0.04f, 0.1f, 0.5f, 1f), 3f * uiScale);
-        DrawFloatingNote(R(468f, 45f, 25f, 46f), new Color(1f, 0.27f, 0.88f, 1f));
-        DrawFloatingNote(R(520f, 14f, 26f, 48f), new Color(0.98f, 0.34f, 1f, 1f));
+        if (uiSelectMusicTitle != null)
+        {
+            GUI.DrawTexture(R(536f, 16f, 600f, 84f), uiSelectMusicTitle, ScaleMode.StretchToFill);
+        }
+        else
+        {
+            Rect titleRect = R(14f, 18f, 555f, 100f);
+            DrawNeonPanel(titleRect, new Color(0.02f, 0.07f, 0.34f, 0.96f), new Color(0.12f, 0.92f, 1f, 0.82f), fit);
+            DrawOutlinedLabel(new Rect(titleRect.x + 34f * fit, titleRect.y + 5f * fit, titleRect.width - 70f * fit, titleRect.height - 10f * fit), "SONG SELECT", titleTextStyle, new Color(0.04f, 0.1f, 0.5f, 1f), 3f * uiScale);
+            DrawFloatingNote(R(468f, 45f, 25f, 46f), new Color(1f, 0.27f, 0.88f, 1f));
+            DrawFloatingNote(R(520f, 14f, 26f, 48f), new Color(0.98f, 0.34f, 1f, 1f));
+        }
 
         bool hasSongs = localSongs.Count > 0;
         string selectedSongName = GetLocalSongName(selectedLocalSongIndex);
 
-        DrawSongCarousel(offsetX, offsetY, fit, hasSongs, uiScale);
+        DrawSongCarousel(stretchX, offsetY, fit, hasSongs, uiScale);
 
         bool previousEnabled = GUI.enabled;
         GUI.enabled = previousEnabled && hasSongs && localSongs.Count > 1 && !isLoadingLocalSong;
-        if (DrawCircleButton(R(54f, 392f, 106f, 106f), "<", uiScale))
+        if (DrawCircleButton(R(54f, 394f, 102f, 102f), "<", uiScale, true))
         {
             SelectSongOffset(-1);
         }
 
-        if (DrawCircleButton(R(1518f, 394f, 96f, 104f), ">", uiScale))
+        if (DrawCircleButton(R(1516f, 394f, 102f, 102f), ">", uiScale, false))
         {
             SelectSongOffset(1);
         }
@@ -570,20 +615,35 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.enabled = previousEnabled;
 
         Rect infoRect = R(352f, 598f, 982f, 206f);
-        DrawNeonPanel(infoRect, new Color(0.015f, 0.035f, 0.14f, 0.96f), new Color(0.72f, 0.9f, 1f, 0.9f), fit);
-        DrawCircleIcon(R(398f, 642f, 112f, 112f), new Color(0.68f, 0.45f, 1f, 1f), fit);
-        GUI.Label(R(538f, 618f, 380f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
-        DrawRect(R(538f, 680f, 730f, 3f), new Color(0.48f, 0.24f, 1f, 0.56f));
-        GUI.Label(R(538f, 690f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
-        GUI.Label(
-            R(540f, 732f, 565f, 58f),
-            hasSongs
-                ? "로컬 음악 파일에서 BPM과 노트를 자동 분석합니다.\n선택한 난이도로 바로 게임을 시작합니다."
-                : "Assets/Resources/Music 폴더에 MP3 파일을 넣으면 이 화면에 표시됩니다.",
-            promptTextStyle);
-        DrawEqualizer(R(992f, 636f, 270f, 42f), fit);
-        DrawNeonPanel(R(1115f, 730f, 158f, 46f), new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
-        GUI.Label(R(1128f, 731f, 130f, 44f), generatedBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+        string infoDescription = hasSongs
+            ? "로컬 음악 파일에서 BPM과 노트를 자동 분석합니다.\n선택한 난이도로 바로 게임을 시작합니다."
+            : "Assets/Resources/Music 폴더에 MP3 파일을 넣으면 이 화면에 표시됩니다.";
+        if (uiSongExpPanel != null)
+        {
+            GUI.DrawTexture(infoRect, uiSongExpPanel, ScaleMode.StretchToFill);
+            if (uiSongboxFrame != null)
+            {
+                GUI.DrawTexture(R(386f, 634f, 132f, 132f), uiSongboxFrame, ScaleMode.StretchToFill);
+            }
+
+            GUI.Label(R(548f, 620f, 500f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
+            GUI.Label(R(550f, 674f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
+            GUI.Label(R(552f, 712f, 510f, 58f), infoDescription, promptTextStyle);
+            // The dark pill baked into the panel art hosts the BPM readout.
+            GUI.Label(R(1094f, 714f, 186f, 54f), generatedBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+        }
+        else
+        {
+            DrawNeonPanel(infoRect, new Color(0.015f, 0.035f, 0.14f, 0.96f), new Color(0.72f, 0.9f, 1f, 0.9f), fit);
+            DrawCircleIcon(R(398f, 642f, 112f, 112f), new Color(0.68f, 0.45f, 1f, 1f), fit);
+            GUI.Label(R(538f, 618f, 380f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
+            DrawRect(R(538f, 680f, 730f, 3f), new Color(0.48f, 0.24f, 1f, 0.56f));
+            GUI.Label(R(538f, 690f, 300f, 32f), "노래 프롬프트", promptTitleStyle);
+            GUI.Label(R(540f, 732f, 565f, 58f), infoDescription, promptTextStyle);
+            DrawEqualizer(R(992f, 636f, 270f, 42f), fit);
+            DrawNeonPanel(R(1115f, 730f, 158f, 46f), new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
+            GUI.Label(R(1128f, 731f, 130f, 44f), generatedBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+        }
 
         // Bottom row: generate on the far left, difficulty centered, PLAY on the right.
         DrawSongSelectDifficultyButton(R(504f, 812f, 212f, 112f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
@@ -591,13 +651,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         DrawSongSelectDifficultyButton(R(956f, 812f, 212f, 112f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
 
         GUI.enabled = previousEnabled && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
-        if (DrawArcadeButton(R(24f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale))
+        if (DrawArcadeButton(R(24f, 812f, 292f, 112f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale, uiSongGenButton))
         {
             GenerateNewSong();
         }
 
         GUI.enabled = previousEnabled && hasSongs && !isLoadingLocalSong;
-        if (DrawArcadeButton(R(1340f, 812f, 316f, 112f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale))
+        if (DrawArcadeButton(R(1340f, 812f, 316f, 112f), "PLAY", new Color(0.10f, 0.74f, 0.20f, 1f), new Color(0.58f, 1f, 0.38f, 1f), uiScale, uiPlayButton))
         {
             PlayLocalSong(selectedLocalSongIndex);
         }
@@ -693,6 +753,26 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
     }
 
+    private void UpdateSongSelectCamera()
+    {
+        if (gameCamera == null)
+        {
+            return;
+        }
+
+        // Zoom in on the backdrop while browsing songs so the art fills the
+        // view top to bottom; gameplay always runs at the design size. During
+        // the loading overlay the camera hurries back so the reveal is correct.
+        float target = songSelectionVisible && !isLoadingScreenVisible
+            ? SongSelectCameraSize
+            : GameplayCameraSize;
+        float speed = isLoadingScreenVisible ? 4f : 2.6f;
+        gameCamera.orthographicSize = Mathf.MoveTowards(
+            gameCamera.orthographicSize,
+            target,
+            Time.unscaledDeltaTime * speed);
+    }
+
     private void UpdateSongCarousel()
     {
         if (songCarouselOffset == 0f && songCarouselVelocity == 0f)
@@ -715,7 +795,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
     }
 
-    private void DrawSongCarousel(float offsetX, float offsetY, float fit, bool hasSongs, float uiScale)
+    private void DrawSongCarousel(float stretchX, float offsetY, float fit, bool hasSongs, float uiScale)
     {
         float animOffset = songCarouselOffset;
         List<int> slots = new List<int> { -2, -1, 0, 1, 2 };
@@ -752,7 +832,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             string songName = hasSongs ? GetLocalSongName(songIndex) : (slot == 0 ? "NO LOCAL SONG" : "NO SONG");
             Color accent = SongCardAccents[songIndex < 0 ? 0 : songIndex % SongCardAccents.Length];
-            Rect rect = new Rect(offsetX + x * fit, offsetY + y * fit, width * fit, height * fit);
+            float centerX = (x + width * 0.5f) * stretchX;
+            Rect rect = new Rect(centerX - width * fit * 0.5f, offsetY + y * fit, width * fit, height * fit);
             DrawSongCard(rect, songName, accent, selection, alpha, uiScale);
         }
     }
@@ -764,13 +845,39 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        Color selectedFill = new Color(accent.r * 0.45f, accent.g * 0.25f, accent.b * 0.72f, 0.96f);
-        Color unselectedFill = new Color(accent.r * 0.55f, accent.g * 0.45f, accent.b * 0.75f, 0.72f);
-        Color fill = Color.Lerp(unselectedFill, selectedFill, selection);
-        DrawNeonPanel(rect, fill, new Color(0.78f, 0.95f, 1f, Mathf.Lerp(0.68f, 0.96f, selection)), scale, alpha);
+        // Near the center the procedural panel crossfades into the songbox
+        // board art from the UI kit.
+        float boardBlend = uiSongboxBoard != null ? SmoothEdge(0.55f, 0.92f, selection) : 0f;
+        float panelAlpha = alpha * (1f - boardBlend);
+        if (panelAlpha > 0.01f)
+        {
+            Color selectedFill = new Color(accent.r * 0.45f, accent.g * 0.25f, accent.b * 0.72f, 0.96f);
+            Color unselectedFill = new Color(accent.r * 0.55f, accent.g * 0.45f, accent.b * 0.75f, 0.72f);
+            Color fill = Color.Lerp(unselectedFill, selectedFill, selection);
+            DrawNeonPanel(rect, fill, new Color(0.78f, 0.95f, 1f, Mathf.Lerp(0.68f, 0.96f, selection)), scale, panelAlpha);
 
-        Rect iconRect = new Rect(rect.center.x - rect.width * 0.16f, rect.y + rect.height * 0.15f, rect.width * 0.32f, rect.height * 0.32f);
-        DrawCircleIcon(iconRect, new Color(0.95f, 0.74f, 1f, Mathf.Lerp(0.72f, 1f, selection)), scale, alpha);
+            Rect iconRect = new Rect(rect.center.x - rect.width * 0.16f, rect.y + rect.height * 0.15f, rect.width * 0.32f, rect.height * 0.32f);
+            DrawCircleIcon(iconRect, new Color(0.95f, 0.74f, 1f, Mathf.Lerp(0.72f, 1f, selection)), scale, panelAlpha);
+        }
+
+        if (boardBlend > 0.01f)
+        {
+            Color previousBoardColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, previousBoardColor.a * alpha * boardBlend);
+            GUI.DrawTexture(rect, uiSongboxBoard, ScaleMode.StretchToFill);
+            if (uiSongboxFrame != null)
+            {
+                float frameSize = rect.width * 0.34f;
+                Rect frameRect = new Rect(
+                    rect.center.x - frameSize * 0.5f,
+                    rect.y + rect.height * 0.11f,
+                    frameSize,
+                    frameSize);
+                GUI.DrawTexture(frameRect, uiSongboxFrame, ScaleMode.StretchToFill);
+            }
+
+            GUI.color = previousBoardColor;
+        }
 
         // Fixed font size + GUI.matrix scaling: animating the font size itself
         // regenerates dynamic-font glyphs every frame, and the atlas rebuild makes
@@ -836,21 +943,54 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
     }
 
-    private bool DrawCircleButton(Rect rect, string text, float scale)
+    private bool DrawCircleButton(Rect rect, string text, float scale, bool flipHorizontal)
     {
-        DrawRect(rect, new Color(0.68f, 0.85f, 1f, 0.42f));
-        Rect inner = new Rect(rect.x + 10f * scale, rect.y + 10f * scale, rect.width - 20f * scale, rect.height - 20f * scale);
-        DrawRect(inner, new Color(0.02f, 0.03f, 0.24f, GUI.enabled ? 0.92f : 0.42f));
-        GUIStyle style = CreateSongSelectStyle(54f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
-        GUI.Label(inner, text, style);
+        if (uiNextSongButton != null)
+        {
+            Color previousGuiColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, previousGuiColor.a * (GUI.enabled ? 1f : 0.45f));
+            if (flipHorizontal)
+            {
+                Matrix4x4 previousMatrix = GUI.matrix;
+                GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), rect.center);
+                GUI.DrawTexture(rect, uiNextSongButton, ScaleMode.StretchToFill);
+                GUI.matrix = previousMatrix;
+            }
+            else
+            {
+                GUI.DrawTexture(rect, uiNextSongButton, ScaleMode.StretchToFill);
+            }
+
+            GUI.color = previousGuiColor;
+        }
+        else
+        {
+            DrawRect(rect, new Color(0.68f, 0.85f, 1f, 0.42f));
+            Rect inner = new Rect(rect.x + 10f * scale, rect.y + 10f * scale, rect.width - 20f * scale, rect.height - 20f * scale);
+            DrawRect(inner, new Color(0.02f, 0.03f, 0.24f, GUI.enabled ? 0.92f : 0.42f));
+            GUIStyle style = CreateSongSelectStyle(54f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+            GUI.Label(inner, text, style);
+        }
+
         return GUI.Button(rect, GUIContent.none, GUIStyle.none);
     }
 
-    private bool DrawArcadeButton(Rect rect, string label, Color fill, Color highlight, float scale)
+    private bool DrawArcadeButton(Rect rect, string label, Color fill, Color highlight, float scale, Texture2D texture = null)
     {
-        DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, GUI.enabled ? 0.95f : 0.38f), new Color(highlight.r, highlight.g, highlight.b, GUI.enabled ? 0.92f : 0.35f), scale);
-        Rect shine = new Rect(rect.x + 14f * scale, rect.y + 12f * scale, rect.width - 28f * scale, rect.height * 0.22f);
-        DrawRect(shine, new Color(1f, 1f, 1f, GUI.enabled ? 0.22f : 0.08f));
+        if (texture != null)
+        {
+            Color previousGuiColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, previousGuiColor.a * (GUI.enabled ? 1f : 0.45f));
+            GUI.DrawTexture(rect, texture, ScaleMode.StretchToFill);
+            GUI.color = previousGuiColor;
+        }
+        else
+        {
+            DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, GUI.enabled ? 0.95f : 0.38f), new Color(highlight.r, highlight.g, highlight.b, GUI.enabled ? 0.92f : 0.35f), scale);
+            Rect shine = new Rect(rect.x + 14f * scale, rect.y + 12f * scale, rect.width - 28f * scale, rect.height * 0.22f);
+            DrawRect(shine, new Color(1f, 1f, 1f, GUI.enabled ? 0.22f : 0.08f));
+        }
+
         GUIStyle style = CreateSongSelectStyle(label == "PLAY" ? 42f : 27f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
         DrawOutlinedLabel(rect, label, style, new Color(0f, 0f, 0.12f, 0.82f), 2f * scale);
         return GUI.Button(rect, GUIContent.none, GUIStyle.none);
@@ -861,11 +1001,26 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         bool selected = selectedDifficulty == difficulty;
         bool previousEnabled = GUI.enabled;
         GUI.enabled = previousEnabled && !isLoadingLocalSong && !isRequestingMurekaSong;
-        Color border = selected ? new Color(1f, 1f, 1f, 0.96f) : new Color(0.72f, 0.95f, 1f, 0.72f);
-        DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, selected ? 0.95f : 0.70f), border, scale);
-        GUIStyle labelStyle = CreateSongSelectStyle(30f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor);
+        Texture2D pill = selected ? uiLevelSelectButton : uiLevelButton;
+        Color textColor = WhiteColor;
+        if (pill != null)
+        {
+            Color previousGuiColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, previousGuiColor.a * (GUI.enabled ? 1f : 0.5f));
+            GUI.DrawTexture(rect, pill, ScaleMode.StretchToFill);
+            GUI.color = previousGuiColor;
+            // Dark text on the white pill, white text on the selected pink pill.
+            textColor = selected ? WhiteColor : new Color(0.30f, 0.24f, 0.38f, 1f);
+        }
+        else
+        {
+            Color border = selected ? new Color(1f, 1f, 1f, 0.96f) : new Color(0.72f, 0.95f, 1f, 0.72f);
+            DrawNeonPanel(rect, new Color(fill.r, fill.g, fill.b, selected ? 0.95f : 0.70f), border, scale);
+        }
+
+        GUIStyle labelStyle = CreateSongSelectStyle(30f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, textColor);
         GUI.Label(new Rect(rect.x, rect.y + 12f * scale, rect.width, 44f * scale), GetDifficultyPreset(difficulty).Label, labelStyle);
-        GUI.Label(new Rect(rect.x, rect.y + 54f * scale, rect.width, 36f * scale), GetDifficultyStars(difficulty), CreateSongSelectStyle(23f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+        GUI.Label(new Rect(rect.x, rect.y + 54f * scale, rect.width, 36f * scale), GetDifficultyStars(difficulty), CreateSongSelectStyle(23f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, textColor));
         if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
         {
             SetDifficulty(difficulty);
@@ -2181,14 +2336,27 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void UpdateParallaxBackground()
     {
-        // The song-select screen keeps the backdrop drifting by lazily.
+        // The song-select screen keeps the backdrop drifting by lazily and
+        // settles the art layers a little lower so they don't feel afloat.
         float deltaTime = Time.deltaTime * (songSelectionVisible ? 0.3f : 1f);
+        float targetDrop = songSelectionVisible ? 0.2f : 0f;
+        songSelectBackdropDrop = Mathf.MoveTowards(songSelectBackdropDrop, targetDrop, Time.deltaTime * 1.4f);
         for (int i = 0; i < parallaxLayers.Count; i++)
         {
             ParallaxLayer layer = parallaxLayers[i];
             float movement = layer.Speed * deltaTime;
             layer.FirstTile.localPosition += Vector3.left * movement;
             layer.SecondTile.localPosition += Vector3.left * movement;
+            if (!layer.FirstTile.name.StartsWith("BG", StringComparison.Ordinal))
+            {
+                Vector3 firstPosition = layer.FirstTile.localPosition;
+                firstPosition.y = layer.CenterY - songSelectBackdropDrop;
+                layer.FirstTile.localPosition = firstPosition;
+                Vector3 secondPosition = layer.SecondTile.localPosition;
+                secondPosition.y = firstPosition.y;
+                layer.SecondTile.localPosition = secondPosition;
+            }
+
             WrapParallaxTile(layer.FirstTile, layer.SecondTile, layer.TileWidth);
             WrapParallaxTile(layer.SecondTile, layer.FirstTile, layer.TileWidth);
         }
@@ -3199,7 +3367,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             yield break;
         }
 
-        float halfHeight = gameCamera != null ? gameCamera.orthographicSize : 5f;
+        float halfHeight = GameplayCameraSize;
         float halfWidth = halfHeight * (gameCamera != null ? gameCamera.aspect : 16f / 9f);
         Vector3 viewCenter = gameCamera != null ? gameCamera.transform.position : Vector3.zero;
         Vector3 target = new Vector3(
@@ -3241,7 +3409,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        float halfHeight = gameCamera != null ? gameCamera.orthographicSize : 5f;
+        // Size against the gameplay design view: while the overlay is up the
+        // camera returns to GameplayCameraSize before the reveal.
+        float halfHeight = GameplayCameraSize;
         float halfWidth = halfHeight * (gameCamera != null ? gameCamera.aspect : 16f / 9f);
 
         loadingScreenRoot = new GameObject("Loading Screen");
