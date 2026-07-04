@@ -117,6 +117,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public float GoodNoteChance;
         public float PeakSearchRadius;
         public float PeakTimeInfluence;
+        public float PatternSlotsPerBar;
+        public bool PatternAllowsHalfBeats;
     }
 
     private sealed class ColorRecoveryTarget
@@ -232,20 +234,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         AnalysisHighOnsetThreshold = 0.86f,
         AnalysisHighOnsetMinChance = 0.78f,
         AnalysisExtraNoteChance = 0f,
-        LongEnergyThreshold = 0.52f,
-        LongNoteChance = 0.22f,
+        LongEnergyThreshold = 0.46f,
+        LongNoteChance = 0.30f,
         FallbackStrongChance = 0.78f,
         FallbackWeakChance = 0.28f,
         FallbackLongChance = 0.18f,
         FallbackExtraNoteChance = 0.04f,
-        TapGap = 0.52f,
+        TapGap = 0.40f,
         LongGap = 1.20f,
         LaneChangeChance = 0.55f,
         WideLaneJumpChance = 0.08f,
         ColorSwitchChance = 0.30f,
         GoodNoteChance = 0.58f,
         PeakSearchRadius = 0.06f,
-        PeakTimeInfluence = 0.35f
+        PeakTimeInfluence = 0.35f,
+        PatternSlotsPerBar = 2f,
+        PatternAllowsHalfBeats = false
     };
     private static readonly DifficultyPreset NormalDifficulty = new DifficultyPreset
     {
@@ -259,20 +263,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         AnalysisHighOnsetThreshold = 0.78f,
         AnalysisHighOnsetMinChance = 0.94f,
         AnalysisExtraNoteChance = 0f,
-        LongEnergyThreshold = 0.38f,
+        LongEnergyThreshold = 0.34f,
         LongNoteChance = 0.58f,
         FallbackStrongChance = 0.95f,
         FallbackWeakChance = 0.76f,
         FallbackLongChance = 0.56f,
         FallbackExtraNoteChance = 0.18f,
-        TapGap = MinTapNoteGap,
+        TapGap = 0.30f,
         LongGap = MinLongNoteGap,
         LaneChangeChance = 0.90f,
         WideLaneJumpChance = 0.35f,
         ColorSwitchChance = 0.50f,
         GoodNoteChance = 0.55f,
         PeakSearchRadius = 0.06f,
-        PeakTimeInfluence = 0.35f
+        PeakTimeInfluence = 0.35f,
+        PatternSlotsPerBar = 3.2f,
+        PatternAllowsHalfBeats = false
     };
     private static readonly DifficultyPreset HardDifficulty = new DifficultyPreset
     {
@@ -286,20 +292,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         AnalysisHighOnsetThreshold = 0.66f,
         AnalysisHighOnsetMinChance = 0.98f,
         AnalysisExtraNoteChance = 0.52f,
-        LongEnergyThreshold = 0.54f,
-        LongNoteChance = 0.24f,
+        LongEnergyThreshold = 0.44f,
+        LongNoteChance = 0.36f,
         FallbackStrongChance = 0.98f,
         FallbackWeakChance = 0.96f,
         FallbackLongChance = 0.22f,
         FallbackExtraNoteChance = 0.58f,
-        TapGap = 0.24f,
+        TapGap = 0.15f,
         LongGap = 0.78f,
         LaneChangeChance = 1f,
         WideLaneJumpChance = 0.70f,
         ColorSwitchChance = 0.82f,
         GoodNoteChance = 0.52f,
         PeakSearchRadius = 0.055f,
-        PeakTimeInfluence = 0.35f
+        PeakTimeInfluence = 0.35f,
+        PatternSlotsPerBar = 5f,
+        PatternAllowsHalfBeats = true
     };
 
     private static Sprite badTapSprite;
@@ -377,6 +385,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private AudioSource hitSoundSource;
     private AudioSource longScratchSoundSource;
     private AudioClip hitSoundClip;
+    private string currentHitSoundKey;
     private AudioClip longScratchSoundClip;
     private AudioSource metronomeSource;
     private AudioClip metronomeTickClip;
@@ -855,7 +864,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.color = new Color(1f, 1f, 1f, introInfoColor.a * Mathf.Clamp01(introInfoP * 2.2f));
 
         SongAnalysis previewAnalysis = GetSelectedSongPreviewAnalysis();
-        float previewBpm = previewAnalysis != null ? previewAnalysis.Bpm : generatedBpm;
+        // While the selected song's analysis is still running there is no real
+        // BPM to show; a placeholder beats displaying the stale 128 default.
+        string previewBpmText = IsAnalysisUsable(previewAnalysis)
+            ? previewAnalysis.Bpm.ToString("0") + " BPM"
+            : "-- BPM";
         string infoDescription = hasSongs
             ? GetSongMoodDescription(GetLocalSongName(selectedLocalSongIndex), previewAnalysis)
             : "Assets/Resources/Music 폴더에 MP3 파일을 넣으면 이 화면에 표시됩니다.";
@@ -879,7 +892,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 infoRect.y + infoRect.height * 0.568f,
                 infoRect.width * 0.20f,
                 infoRect.height * 0.28f);
-            GUI.Label(bpmRect, previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+            GUI.Label(bpmRect, previewBpmText, CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
         }
         else
         {
@@ -895,7 +908,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 infoRect.width * 0.20f,
                 infoRect.height * 0.28f);
             DrawNeonPanel(bpmRect, new Color(0.06f, 0.04f, 0.20f, 0.92f), new Color(0.56f, 0.35f, 1f, 0.95f), fit);
-            GUI.Label(bpmRect, previewBpm.ToString("0") + " BPM", CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+            GUI.Label(bpmRect, previewBpmText, CreateSongSelectStyle(24f, uiScale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
         }
 
         GUI.matrix = introInfoMatrix;
@@ -3757,6 +3770,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void RestartChart()
     {
         ResetPauseState();
+        UpdateHitSoundForCurrentSong();
         for (int i = 0; i < notes.Count; i++)
         {
             ClearNote(notes[i]);
@@ -5099,25 +5113,95 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private static AudioClip CreateHitSoundClip()
     {
+        return CreateHitSoundClipVariant(0, 1f);
+    }
+
+    private void UpdateHitSoundForCurrentSong()
+    {
+        // Distinct synthesized timbres never reliably matched the tracks, so
+        // every song uses the proven punch hit; per-song identity comes from a
+        // subtle tuning shift instead (drum tuned slightly differently), on
+        // top of the red/blue pitch split applied at play time.
+        const int flavor = 0;
+        float toneShift = Mathf.Lerp(0.96f, 1.05f, (CreateStableSeed(generatedSongLabel) & 0xFFFF) / 65535f);
+        string key = flavor + ":" + toneShift.ToString("F4");
+        if (key == currentHitSoundKey && hitSoundClip != null)
+        {
+            return;
+        }
+
+        if (hitSoundClip != null)
+        {
+            Destroy(hitSoundClip);
+        }
+
+        hitSoundClip = CreateHitSoundClipVariant(flavor, toneShift);
+        currentHitSoundKey = key;
+    }
+
+    private static AudioClip CreateHitSoundClipVariant(int flavor, float toneShift)
+    {
         const int sampleRate = 48000;
-        const float duration = 0.115f;
+        float duration = flavor == 2 ? 0.14f : 0.115f;
         int sampleCount = Mathf.CeilToInt(sampleRate * duration);
         float[] samples = new float[sampleCount];
-        var random = new System.Random(7319);
+        var random = new System.Random(7319 + flavor * 101);
 
         for (int i = 0; i < sampleCount; i++)
         {
             float time = i / (float)sampleRate;
-            float bodyEnvelope = Mathf.Exp(-time * 31f);
-            float clickEnvelope = Mathf.Exp(-time * 92f);
-            float frequency = Mathf.Lerp(175f, 82f, time / duration);
-            float thump = Mathf.Sin(2f * Mathf.PI * frequency * time) * 0.72f * bodyEnvelope;
-            float snap = Mathf.Sin(2f * Mathf.PI * 470f * time) * 0.18f * Mathf.Exp(-time * 48f);
-            float noise = ((float)random.NextDouble() * 2f - 1f) * 0.32f * clickEnvelope;
-            samples[i] = (float)Math.Tanh((thump + snap + noise) * 1.35f) * 0.88f;
+            float progress = time / duration;
+            float noise = (float)random.NextDouble() * 2f - 1f;
+            float value;
+            switch (flavor)
+            {
+                case 1:
+                {
+                    // Rim snap: a short woody knock — percussive, no melody.
+                    float body = Mathf.Sin(2f * Mathf.PI * 340f * toneShift * time) * 0.50f * Mathf.Exp(-time * 44f);
+                    float knock = Mathf.Sin(2f * Mathf.PI * 880f * toneShift * time) * 0.10f * Mathf.Exp(-time * 95f);
+                    float crack = noise * 0.30f * Mathf.Exp(-time * 75f);
+                    value = body + knock + crack;
+                    break;
+                }
+
+                case 2:
+                {
+                    // Soft pop: warm low sine, gentle attack, barely any noise.
+                    float frequency = Mathf.Lerp(300f, 214f, progress) * toneShift;
+                    float attack = Mathf.Clamp01(time / 0.008f);
+                    float body = Mathf.Sin(2f * Mathf.PI * frequency * time) * 0.78f * attack * Mathf.Exp(-time * 21f);
+                    float breath = noise * 0.08f * Mathf.Exp(-time * 60f);
+                    value = body + breath;
+                    break;
+                }
+
+                case 3:
+                {
+                    // Tight snare tick: low thump plus a crisp noise crack —
+                    // a pure rhythm marker for fast songs, nothing melodic.
+                    float thump = Mathf.Sin(2f * Mathf.PI * 145f * toneShift * time) * 0.46f * Mathf.Exp(-time * 32f);
+                    float crack = noise * 0.36f * Mathf.Exp(-time * 88f);
+                    value = thump + crack;
+                    break;
+                }
+
+                default:
+                {
+                    // Punchy thump: the original kick-like hit.
+                    float frequency = Mathf.Lerp(175f, 82f, progress) * toneShift;
+                    float thump = Mathf.Sin(2f * Mathf.PI * frequency * time) * 0.72f * Mathf.Exp(-time * 31f);
+                    float snap = Mathf.Sin(2f * Mathf.PI * 470f * toneShift * time) * 0.18f * Mathf.Exp(-time * 48f);
+                    float click = noise * 0.32f * Mathf.Exp(-time * 92f);
+                    value = thump + snap + click;
+                    break;
+                }
+            }
+
+            samples[i] = (float)Math.Tanh(value * 1.35f) * 0.88f;
         }
 
-        AudioClip clip = AudioClip.Create("Short Punchy Note Hit", sampleCount, 1, sampleRate, false);
+        AudioClip clip = AudioClip.Create("Note Hit Flavor " + flavor, sampleCount, 1, sampleRate, false);
         clip.SetData(samples, 0);
         return clip;
     }
@@ -6401,7 +6485,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         chart.Clear();
         DifficultyPreset difficulty = GetDifficultyPreset();
         int laneCursor = 1;
-        int playableBeatIndex = 0;
         bool lastIsGood = true;
         int colorRunLength = 0;
         int lastWheelBeatIndex = -100;
@@ -6414,133 +6497,182 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             0.05f,
             AverageEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, firstPlayableTime, finalPlayableTime));
         const int PhraseBeats = BeatsPerBar * 4;
+        int slotsPerBar = BeatsPerBar * 2;
 
+        // Rolling per-beat dice makes every bar different, which reads as
+        // random noise to the player. Instead, each 4-bar phrase gets ONE bar
+        // rhythm pattern chosen from where that phrase's onsets actually land,
+        // repeated across its bars — patterns become learnable and musical,
+        // and change when the song moves to a new section.
+        List<int> playableBeats = new List<int>();
         for (int i = 0; i < analysis.BeatTimes.Count; i++)
         {
-            float beatTime = analysis.BeatTimes[i];
-            if (beatTime < firstPlayableTime || beatTime > finalPlayableTime)
+            if (analysis.BeatTimes[i] >= firstPlayableTime && analysis.BeatTimes[i] <= finalPlayableTime)
             {
-                continue;
+                playableBeats.Add(i);
+            }
+        }
+
+        float searchRadius = Mathf.Min(difficulty.PeakSearchRadius, analysis.BeatDuration * 0.3f);
+        float[] slotStrength = new float[slotsPerBar];
+        int[] slotSamples = new int[slotsPerBar];
+        bool[] chosenSlots = new bool[slotsPerBar];
+
+        for (int phraseStart = 0; phraseStart < playableBeats.Count; phraseStart += PhraseBeats)
+        {
+            int phraseLength = Mathf.Min(PhraseBeats, playableBeats.Count - phraseStart);
+            float phraseStartTime = analysis.BeatTimes[playableBeats[phraseStart]];
+            float phraseEndTime = analysis.BeatTimes[playableBeats[phraseStart + phraseLength - 1]] + analysis.BeatDuration;
+
+            // Average onset strength per bar slot across this phrase's bars.
+            Array.Clear(slotStrength, 0, slotsPerBar);
+            Array.Clear(slotSamples, 0, slotsPerBar);
+            for (int b = 0; b < phraseLength; b++)
+            {
+                GetSlotTimes(analysis, playableBeats[phraseStart + b], out float beatTime, out float halfTime);
+                int slotBase = (b % BeatsPerBar) * 2;
+                slotStrength[slotBase] += SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, beatTime);
+                slotSamples[slotBase]++;
+                slotStrength[slotBase + 1] += SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, halfTime);
+                slotSamples[slotBase + 1]++;
             }
 
-            int beatInBar = playableBeatIndex % BeatsPerBar;
-            int phraseBeat = playableBeatIndex % PhraseBeats;
-            bool strongBeat = beatInBar == 0 || beatInBar == 2;
-            bool phraseStart = phraseBeat == 0;
-            bool fillBar = phraseBeat >= PhraseBeats - BeatsPerBar;
-            float searchRadius = Mathf.Min(difficulty.PeakSearchRadius, analysis.BeatDuration * 0.3f);
-            float peakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, beatTime, searchRadius);
-            float noteTime = Mathf.Lerp(beatTime, peakTime, difficulty.PeakTimeInfluence);
-            float onsetStrength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, peakTime);
-            float energyStrength = SampleEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, peakTime);
+            for (int s = 0; s < slotsPerBar; s++)
+            {
+                slotStrength[s] = slotSamples[s] > 0 ? slotStrength[s] / slotSamples[s] : 0f;
+            }
 
             // Loud sections (chorus) play dense, quiet sections breathe.
-            float sectionEnergy = AverageEnvelope(
-                analysis.EnergyEnvelope,
-                analysis.EnvelopeRate,
-                beatTime - analysis.BeatDuration * 4f,
-                beatTime + analysis.BeatDuration * 4f);
-            float densityScale = Mathf.Clamp(sectionEnergy / songAverageEnergy, 0.75f, 1.25f);
+            float sectionEnergy = AverageEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, phraseStartTime, phraseEndTime);
+            float densityScale = Mathf.Clamp(sectionEnergy / songAverageEnergy, 0.7f, 1.2f);
+            int targetSlots = Mathf.Clamp(
+                Mathf.RoundToInt(difficulty.PatternSlotsPerBar * densityScale),
+                1,
+                difficulty.PatternAllowsHalfBeats ? slotsPerBar - 1 : BeatsPerBar);
 
-            float noteChance = strongBeat
-                ? difficulty.AnalysisStrongBase + onsetStrength * difficulty.AnalysisStrongOnset + energyStrength * difficulty.AnalysisStrongEnergy
-                : difficulty.AnalysisWeakBase + onsetStrength * difficulty.AnalysisWeakOnset + energyStrength * difficulty.AnalysisWeakEnergy;
-            if (onsetStrength >= difficulty.AnalysisHighOnsetThreshold)
+            // The downbeat always plays; the rest of the pattern follows the
+            // strongest slots of this section's rhythm.
+            Array.Clear(chosenSlots, 0, slotsPerBar);
+            chosenSlots[0] = true;
+            int chosenCount = 1;
+            int fillSlot = -1;
+            while (chosenCount < targetSlots || fillSlot < 0)
             {
-                noteChance = Mathf.Max(noteChance, difficulty.AnalysisHighOnsetMinChance);
-            }
-
-            noteChance *= densityScale;
-            if (fillBar)
-            {
-                noteChance *= 1.12f;
-            }
-
-            // Every phrase opens with a guaranteed anchor note on the downbeat,
-            // but only while the music is actually sounding — silent breaks and
-            // outros must not get forced notes.
-            bool audibleAnchor = phraseStart && (energyStrength >= 0.06f || onsetStrength >= 0.05f);
-            bool wheelPlacedThisBeat = false;
-            if (audibleAnchor || rng.NextDouble() <= Mathf.Clamp01(noteChance))
-            {
-                laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
-                bool isBlue = PickChartNoteColor(rng, difficulty, ref lastIsGood, ref colorRunLength);
-                float sustainedEnergy = AverageEnvelope(
-                    analysis.EnergyEnvelope,
-                    analysis.EnvelopeRate,
-                    noteTime,
-                    noteTime + analysis.BeatDuration * 1.5f);
-
-                // Wheels anchor musical boundaries: strongly favored on phrase
-                // and bar starts, rare mid-bar, and at least a bar apart so the
-                // scroll gesture stays special instead of spammy.
-                float wheelChance = difficulty.LongNoteChance;
-                if (phraseStart)
+                int best = -1;
+                float bestStrength = float.MinValue;
+                for (int s = 1; s < slotsPerBar; s++)
                 {
-                    wheelChance *= 2.2f;
+                    if (chosenSlots[s] || s == fillSlot)
+                    {
+                        continue;
+                    }
+
+                    if (!difficulty.PatternAllowsHalfBeats && s % 2 == 1)
+                    {
+                        continue;
+                    }
+
+                    if (slotStrength[s] > bestStrength)
+                    {
+                        bestStrength = slotStrength[s];
+                        best = s;
+                    }
                 }
-                else if (beatInBar == 0)
+
+                if (best < 0)
                 {
-                    wheelChance *= 1.6f;
+                    break;
+                }
+
+                if (chosenCount < targetSlots)
+                {
+                    chosenSlots[best] = true;
+                    chosenCount++;
                 }
                 else
                 {
-                    wheelChance *= 0.5f;
-                }
-
-                bool wheelReady = playableBeatIndex - lastWheelBeatIndex >= BeatsPerBar;
-                bool longNoteSlot = strongBeat || onsetStrength >= 0.82f;
-                bool isLong = longNoteSlot
-                    && wheelReady
-                    && sustainedEnergy >= difficulty.LongEnergyThreshold
-                    && rng.NextDouble() <= Mathf.Min(0.9f, wheelChance);
-                NoteKind kind = isLong
-                    ? (isBlue ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
-                    : (isBlue ? NoteKind.GoodTap : NoteKind.BadTap);
-
-                if (TryAddGeneratedNote(noteTime, kind, laneCursor) && isLong)
-                {
-                    lastWheelBeatIndex = playableBeatIndex;
-                    wheelPlacedThisBeat = true;
+                    // One extra slot only in the phrase's final bar: a small
+                    // fill that builds into the next phrase's downbeat.
+                    fillSlot = best;
                 }
             }
 
-            // Half-beat extras build toward the end of each phrase (fill bar
-            // may lead into the next downbeat), ease off right after it, and
-            // rest after a wheel so the hand can come back from the scroll.
-            bool extraSlotOpen = beatInBar < BeatsPerBar - 1 || fillBar;
-            if (difficulty.AnalysisExtraNoteChance > 0f && extraSlotOpen && !wheelPlacedThisBeat)
+            for (int b = 0; b < phraseLength; b++)
             {
-                float extraCenterTime = i + 1 < analysis.BeatTimes.Count
-                    ? (beatTime + analysis.BeatTimes[i + 1]) * 0.5f
-                    : beatTime + analysis.BeatDuration * 0.5f;
-                if (extraCenterTime <= finalPlayableTime)
+                int globalBeat = phraseStart + b;
+                bool fillBar = b >= phraseLength - BeatsPerBar && phraseLength == PhraseBeats;
+                GetSlotTimes(analysis, playableBeats[globalBeat], out float beatTime, out float halfTime);
+                int slotBase = (b % BeatsPerBar) * 2;
+
+                for (int half = 0; half < 2; half++)
                 {
-                    float extraPeakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, extraCenterTime, searchRadius);
-                    float extraTime = Mathf.Lerp(extraCenterTime, extraPeakTime, difficulty.PeakTimeInfluence);
-                    float extraOnset = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, extraPeakTime);
-                    float extraChance = difficulty.AnalysisExtraNoteChance
-                        * Mathf.Clamp01(0.55f + extraOnset * 0.9f)
-                        * densityScale;
-                    if (fillBar)
+                    int slot = slotBase + half;
+                    bool slotActive = chosenSlots[slot] || (fillBar && slot == fillSlot);
+                    if (!slotActive)
                     {
-                        extraChance *= 1.55f;
-                    }
-                    else if (phraseBeat < BeatsPerBar)
-                    {
-                        extraChance *= 0.75f;
+                        continue;
                     }
 
-                    if (rng.NextDouble() <= extraChance)
+                    float slotCenter = half == 0 ? beatTime : halfTime;
+                    if (slotCenter > finalPlayableTime)
                     {
-                        laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
-                        bool isBlue = PickChartNoteColor(rng, difficulty, ref lastIsGood, ref colorRunLength);
-                        TryAddGeneratedNote(extraTime, isBlue ? NoteKind.GoodTap : NoteKind.BadTap, laneCursor);
+                        continue;
+                    }
+
+                    float peakTime = FindEnvelopePeakTime(analysis.OnsetStrength, analysis.EnvelopeRate, slotCenter, searchRadius);
+                    float noteTime = Mathf.Lerp(slotCenter, peakTime, difficulty.PeakTimeInfluence);
+                    float onsetStrength = SampleEnvelope(analysis.OnsetStrength, analysis.EnvelopeRate, peakTime);
+                    float energyStrength = SampleEnvelope(analysis.EnergyEnvelope, analysis.EnvelopeRate, slotCenter);
+
+                    // Pattern slots stay quiet through silent breaks and drops.
+                    if (energyStrength < 0.06f && onsetStrength < 0.05f)
+                    {
+                        continue;
+                    }
+
+                    laneCursor = ChooseNextLaneIndex(laneCursor, rng, difficulty);
+                    bool isBlue = PickChartNoteColor(rng, difficulty, ref lastIsGood, ref colorRunLength);
+
+                    // Wheels anchor musical accents: strong beats (1 and 3),
+                    // most likely on the phrase downbeat, spaced at least half
+                    // a bar apart, and only over sustained sound.
+                    bool isLong = false;
+                    int beatInBar = b % BeatsPerBar;
+                    if (half == 0 && (beatInBar == 0 || beatInBar == 2) && globalBeat - lastWheelBeatIndex >= BeatsPerBar / 2)
+                    {
+                        float sustainedEnergy = AverageEnvelope(
+                            analysis.EnergyEnvelope,
+                            analysis.EnvelopeRate,
+                            noteTime,
+                            noteTime + analysis.BeatDuration * 1.5f);
+                        float wheelChance = difficulty.LongNoteChance;
+                        if (b == 0)
+                        {
+                            wheelChance *= 2.4f;
+                        }
+                        else if (beatInBar == 0)
+                        {
+                            wheelChance *= 1.5f;
+                        }
+                        else
+                        {
+                            wheelChance *= 0.8f;
+                        }
+
+                        isLong = sustainedEnergy >= difficulty.LongEnergyThreshold
+                            && rng.NextDouble() <= Mathf.Min(0.92f, wheelChance);
+                    }
+
+                    NoteKind kind = isLong
+                        ? (isBlue ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
+                        : (isBlue ? NoteKind.GoodTap : NoteKind.BadTap);
+
+                    if (TryAddGeneratedNote(noteTime, kind, laneCursor) && isLong)
+                    {
+                        lastWheelBeatIndex = globalBeat;
                     }
                 }
             }
-
-            playableBeatIndex++;
         }
 
         if (chart.Count == 0)
@@ -6549,6 +6681,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         ValidateGeneratedChart(analysis, finalPlayableTime);
+    }
+
+    private static void GetSlotTimes(SongAnalysis analysis, int beatIndex, out float beatTime, out float halfTime)
+    {
+        beatTime = analysis.BeatTimes[beatIndex];
+        halfTime = beatIndex + 1 < analysis.BeatTimes.Count
+            ? (beatTime + analysis.BeatTimes[beatIndex + 1]) * 0.5f
+            : beatTime + analysis.BeatDuration * 0.5f;
     }
 
     private void ValidateGeneratedChart(SongAnalysis analysis, float finalPlayableTime)
