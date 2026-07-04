@@ -3170,12 +3170,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 return;
             }
 
-            if (keyboard.f9Key.wasPressedThisFrame)
+            // Autoplay and metronome are dev-audit tools; latency offset
+            // (F10/F11) stays available in builds for player calibration.
+            if (Application.isEditor && keyboard.f9Key.wasPressedThisFrame)
             {
                 ToggleMetronome();
             }
 
-            if (keyboard.f8Key.wasPressedThisFrame)
+            if (Application.isEditor && keyboard.f8Key.wasPressedThisFrame)
             {
                 autoPlayEnabled = !autoPlayEnabled;
             }
