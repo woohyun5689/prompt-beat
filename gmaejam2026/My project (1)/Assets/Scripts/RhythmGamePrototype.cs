@@ -447,6 +447,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private Texture2D resultGoodTexture;
     private Texture2D resultMissTexture;
     private Texture2D resultBackButtonTexture;
+    private AudioClip resultWinMusicClip;
+    private AudioClip resultLoseMusicClip;
     private Texture2D resultBackgroundTexture;
     private Texture2D resultSpotlightTexture;
     private Texture2D resultLightPoolTexture;
@@ -2568,6 +2570,15 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (musicSource != null)
         {
             musicSource.Stop();
+            AudioClip resultTheme = CalculateResultRank() >= ResultRank.B
+                ? resultWinMusicClip
+                : resultLoseMusicClip;
+            if (resultTheme != null)
+            {
+                musicSource.clip = resultTheme;
+                musicSource.loop = true;
+                musicSource.Play();
+            }
         }
 
         murekaStatus = "Song finished. Result rank: " + CalculateResultRank() + ".";
@@ -6885,6 +6896,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         StopSongPreview();
         musicSource.Stop();
+        musicSource.loop = false;
         musicSource.clip = currentSongClip;
         musicSource.PlayScheduled(songStartDspTime);
     }
@@ -6991,6 +7003,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         resultGoodTexture = Resources.Load<Texture2D>("Score/good");
         resultMissTexture = Resources.Load<Texture2D>("Score/miss");
         resultBackButtonTexture = Resources.Load<Texture2D>("Score/back");
+        resultWinMusicClip = Resources.Load<AudioClip>("Score/result_win_theme");
+        resultLoseMusicClip = Resources.Load<AudioClip>("Score/result_lose_theme");
         resultBackgroundTexture = Resources.Load<Texture2D>("Score/result_bg");
         resultSpotlightTexture = Resources.Load<Texture2D>("Score/result_spotlight");
         resultLightPoolTexture = Resources.Load<Texture2D>("Score/result_light_pool");
