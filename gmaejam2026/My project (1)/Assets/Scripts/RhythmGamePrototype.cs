@@ -182,6 +182,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float AutoFollowSpeed = 12f;
     private const float MinTapNoteGap = 0.38f;
     private const float MinLongNoteGap = 0.95f;
+    // Minimum time from a tap to a following wheel note. Wheels only need
+    // LongGap of recovery AFTER them; requiring LongGap on both sides made
+    // charts whose patterns end bars near beat 4 reject every wheel.
+    private const float WheelLeadInGap = 0.34f;
     private const float MusicLeadIn = 2.1f;
     private const float MinimumLoadingScreenDuration = 2.5f;
     private const float GameplayCameraSize = 5f;
@@ -239,11 +243,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         AnalysisHighOnsetThreshold = 0.86f,
         AnalysisHighOnsetMinChance = 0.78f,
         AnalysisExtraNoteChance = 0f,
-        LongEnergyThreshold = 0.46f,
-        LongNoteChance = 0.30f,
+        LongEnergyThreshold = 0.30f,
+        LongNoteChance = 0.48f,
         FallbackStrongChance = 0.78f,
         FallbackWeakChance = 0.28f,
-        FallbackLongChance = 0.18f,
+        FallbackLongChance = 0.32f,
         FallbackExtraNoteChance = 0.04f,
         TapGap = 0.40f,
         LongGap = 1.20f,
@@ -268,11 +272,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         AnalysisHighOnsetThreshold = 0.78f,
         AnalysisHighOnsetMinChance = 0.94f,
         AnalysisExtraNoteChance = 0f,
-        LongEnergyThreshold = 0.34f,
-        LongNoteChance = 0.58f,
+        LongEnergyThreshold = 0.22f,
+        LongNoteChance = 0.72f,
         FallbackStrongChance = 0.95f,
         FallbackWeakChance = 0.76f,
-        FallbackLongChance = 0.56f,
+        FallbackLongChance = 0.66f,
         FallbackExtraNoteChance = 0.18f,
         TapGap = 0.30f,
         LongGap = MinLongNoteGap,
@@ -297,11 +301,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         AnalysisHighOnsetThreshold = 0.66f,
         AnalysisHighOnsetMinChance = 0.98f,
         AnalysisExtraNoteChance = 0.52f,
-        LongEnergyThreshold = 0.44f,
-        LongNoteChance = 0.36f,
+        LongEnergyThreshold = 0.28f,
+        LongNoteChance = 0.55f,
         FallbackStrongChance = 0.98f,
         FallbackWeakChance = 0.96f,
-        FallbackLongChance = 0.22f,
+        FallbackLongChance = 0.40f,
         FallbackExtraNoteChance = 0.58f,
         TapGap = 0.15f,
         LongGap = 0.78f,
@@ -1787,6 +1791,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         else if (key.Contains("let_s party") || key.Contains("let's party") || key.Contains("lets party"))
         {
             resourceName = "lets_party";
+        }
+        else if (key.Contains("프롬프트 비트") || key.Contains("prompt beat"))
+        {
+            resourceName = "prompt_beat";
         }
         else if (key.Contains("프롬프트 비트 메인곡"))
         {
@@ -3329,43 +3337,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void TryHit(NoteKind inputKind)
     {
-        Note target = FindClosestNote(inputKind);
-        if (target != null)
+        // Judge only the closest pending note in this input family, so a
+        // wrong-key press misses the front note instead of consuming a
+        // matching note queued right behind it.
+        Note target = FindClosestSameInputFamilyNote(inputKind);
+        if (target == null)
         {
-            ApplyHit(target);
             return;
         }
 
-        Note wrongTarget = FindClosestSameInputFamilyNote(inputKind);
-        if (wrongTarget != null)
+        float delta = (float)Math.Abs(GetJudgeDspTime() - target.HitDspTime);
+        if (target.Kind == inputKind && delta <= GetHitWindow(inputKind))
         {
-            ApplyMiss(wrongTarget);
+            ApplyHit(target);
         }
-    }
-
-    private Note FindClosestNote(NoteKind kind)
-    {
-        Note best = null;
-        float bestDelta = GetHitWindow(kind);
-        double now = GetJudgeDspTime();
-
-        for (int i = 0; i < notes.Count; i++)
+        else
         {
-            Note note = notes[i];
-            if (note.Judged || note.Kind != kind)
-            {
-                continue;
-            }
-
-            float delta = (float)Math.Abs(now - note.HitDspTime);
-            if (delta <= bestDelta)
-            {
-                best = note;
-                bestDelta = delta;
-            }
+            ApplyMiss(target);
         }
-
-        return best;
     }
 
     private Note FindClosestSameInputFamilyNote(NoteKind inputKind)
@@ -6755,9 +6744,18 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                         ? (isBlue ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
                         : (isBlue ? NoteKind.GoodTap : NoteKind.BadTap);
 
-                    if (TryAddGeneratedNote(noteTime, kind, laneCursor) && isLong)
+                    if (TryAddGeneratedNote(noteTime, kind, laneCursor))
                     {
-                        lastWheelBeatIndex = globalBeat;
+                        if (isLong)
+                        {
+                            lastWheelBeatIndex = globalBeat;
+                        }
+                    }
+                    else if (isLong)
+                    {
+                        // Too close to the previous note for a wheel — keep
+                        // the beat as a tap instead of dropping it.
+                        TryAddGeneratedNote(noteTime, isBlue ? NoteKind.GoodTap : NoteKind.BadTap, laneCursor);
                     }
                 }
             }
@@ -6768,7 +6766,62 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             chart.Add(new NoteSpec(firstPlayableTime, NoteKind.GoodTap, 1));
         }
 
+        EnsureMinimumWheelNotes();
         ValidateGeneratedChart(analysis, finalPlayableTime);
+    }
+
+    // Last line of defense: charts built from patterns that never leave room
+    // for wheels (or songs whose energy never clears the threshold) would
+    // otherwise ship with zero long notes. Promote well-spaced taps so every
+    // song keeps a scratch moment roughly every nine seconds.
+    private void EnsureMinimumWheelNotes()
+    {
+        if (chart.Count < 3)
+        {
+            return;
+        }
+
+        DifficultyPreset difficulty = GetDifficultyPreset();
+        float chartDuration = chart[chart.Count - 1].Time - chart[0].Time;
+        int desiredWheels = Mathf.Max(2, Mathf.FloorToInt(chartDuration / 9f));
+        int wheelCount = 0;
+        for (int i = 0; i < chart.Count; i++)
+        {
+            if (IsWheelNote(chart[i].Kind))
+            {
+                wheelCount++;
+            }
+        }
+
+        if (wheelCount >= desiredWheels)
+        {
+            return;
+        }
+
+        float lastWheelTime = float.MinValue;
+        for (int i = 1; i < chart.Count - 1 && wheelCount < desiredWheels; i++)
+        {
+            NoteSpec note = chart[i];
+            if (IsWheelNote(note.Kind))
+            {
+                lastWheelTime = note.Time;
+                continue;
+            }
+
+            if (note.Time - lastWheelTime < 6f
+                || note.Time - chart[i - 1].Time < Mathf.Max(difficulty.TapGap, WheelLeadInGap)
+                || chart[i + 1].Time - note.Time < difficulty.LongGap)
+            {
+                continue;
+            }
+
+            NoteKind wheelKind = note.Kind == NoteKind.GoodTap
+                ? NoteKind.GoodWheelUp
+                : NoteKind.BadWheelDown;
+            chart[i] = new NoteSpec(note.Time, wheelKind, note.LaneIndex);
+            lastWheelTime = note.Time;
+            wheelCount++;
+        }
     }
 
     private static void GetSlotTimes(SongAnalysis analysis, int beatIndex, out float beatTime, out float halfTime)
@@ -7023,7 +7076,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     ? (isGood ? NoteKind.GoodWheelUp : NoteKind.BadWheelDown)
                     : (isGood ? NoteKind.GoodTap : NoteKind.BadTap);
 
-                TryAddGeneratedNote(noteTime, kind, laneCursor);
+                if (!TryAddGeneratedNote(noteTime, kind, laneCursor) && isWheel)
+                {
+                    TryAddGeneratedNote(noteTime, isGood ? NoteKind.GoodTap : NoteKind.BadTap, laneCursor);
+                }
             }
 
             if (beatInBar < BeatsPerBar - 1 && rng.NextDouble() <= difficulty.FallbackExtraNoteChance)
@@ -7041,6 +7097,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             chart.Add(new NoteSpec(firstNoteTime, NoteKind.GoodTap, 1));
         }
+
+        EnsureMinimumWheelNotes();
     }
 
     private bool TryAddGeneratedNote(float noteTime, NoteKind kind, int laneIndex)
@@ -7048,8 +7106,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         if (chart.Count > 0)
         {
             NoteSpec previous = chart[chart.Count - 1];
-            float requiredGap = Mathf.Max(GetGeneratedNoteGap(previous.Kind), GetGeneratedNoteGap(kind));
-            if (noteTime - previous.Time < requiredGap)
+            float gapAfterPrevious = GetGeneratedNoteGap(previous.Kind);
+            float leadInForNext = IsWheelNote(kind)
+                ? Mathf.Max(GetDifficultyPreset().TapGap, WheelLeadInGap)
+                : GetGeneratedNoteGap(kind);
+            if (noteTime - previous.Time < Mathf.Max(gapAfterPrevious, leadInForNext))
             {
                 return false;
             }
