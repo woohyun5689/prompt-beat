@@ -5246,7 +5246,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 {
                     // Soft pop: warm low sine, gentle attack, barely any noise.
                     float frequency = Mathf.Lerp(300f, 214f, progress) * toneShift;
-                    float attack = Mathf.Clamp01(time / 0.008f);
+                    float attack = Mathf.Clamp01(time / 0.002f);
                     float body = Mathf.Sin(2f * Mathf.PI * frequency * time) * 0.78f * attack * Mathf.Exp(-time * 21f);
                     float breath = noise * 0.08f * Mathf.Exp(-time * 60f);
                     value = body + breath;
