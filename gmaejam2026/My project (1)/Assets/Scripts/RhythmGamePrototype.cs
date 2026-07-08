@@ -223,6 +223,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const string DefaultMurekaPrompt =
         "Bright energetic K-pop rhythm game song, clean strong beat, cute arcade mood, 128 bpm, catchy synth hook, short intro, no long silence";
 
+    private static readonly bool EnableMurekaSongGeneration = false;
     private static readonly bool ShowMurekaControls = false;
     private static readonly Color BadColor = new Color(1f, 0.12f, 0.12f, 1f);
     private static readonly Color BadDarkColor = new Color(0.55f, 0.02f, 0.04f, 1f);
@@ -779,6 +780,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         EnsureSongSelectUiTextures();
         EnsureSelectedSongIndex();
+        if (!EnableMurekaSongGeneration && isMurekaPromptWindowVisible)
+        {
+            UpdatePromptImeState(false, Rect.zero, 1f);
+            isMurekaPromptWindowVisible = false;
+            isEditingPrompt = false;
+        }
 
         float referenceWidth = 1672f;
         float referenceHeight = 941f;
@@ -926,19 +933,22 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.matrix = introInfoMatrix;
         GUI.color = introInfoColor;
 
-        // Bottom row: generate on the far left, difficulty centered, PLAY on
-        // the right, each hopping up from below the screen in order.
+        // Bottom row: difficulty centered and PLAY on the right; generation is
+        // drawn only for internal builds that explicitly enable it.
         DrawSongSelectDifficultyButton(IntroRise(R(504f, 812f, 212f, 112f), 0.36f), RhythmDifficulty.Easy, new Color(0.02f, 0.42f, 1f, 1f), uiScale);
         DrawSongSelectDifficultyButton(IntroRise(R(730f, 812f, 212f, 112f), 0.40f), RhythmDifficulty.Normal, new Color(0.08f, 0.74f, 0.25f, 1f), uiScale);
         DrawSongSelectDifficultyButton(IntroRise(R(956f, 812f, 212f, 112f), 0.44f), RhythmDifficulty.Hard, new Color(1f, 0.12f, 0.35f, 1f), uiScale);
 
-        GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
-        if (DrawArcadeButton(IntroRise(R(24f, 812f, 292f, 112f), 0.32f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale, uiSongGenButton))
+        if (EnableMurekaSongGeneration)
         {
-            PlayUiClickSound();
-            isMurekaPromptWindowVisible = true;
-            GUI.FocusControl(PromptControlName);
-            murekaStatus = "Write a prompt, then check the server or generate a song.";
+            GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && !isRequestingMurekaSong && !isStartingMurekaBackend && !isLoadingLocalSong;
+            if (DrawArcadeButton(IntroRise(R(24f, 812f, 292f, 112f), 0.32f), "새 노래 생성", new Color(0.46f, 0.08f, 1f, 1f), new Color(0.92f, 0.20f, 1f, 1f), uiScale, uiSongGenButton))
+            {
+                PlayUiClickSound();
+                isMurekaPromptWindowVisible = true;
+                GUI.FocusControl(PromptControlName);
+                murekaStatus = "Write a prompt, then check the server or generate a song.";
+            }
         }
 
         GUI.enabled = previousEnabled && !isMurekaPromptWindowVisible && hasSongs && !isLoadingLocalSong;
@@ -950,7 +960,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         GUI.enabled = previousEnabled;
 
-        if (isMurekaPromptWindowVisible)
+        if (EnableMurekaSongGeneration && isMurekaPromptWindowVisible)
         {
             DrawMurekaPromptWindow(uiScale);
         }
@@ -3018,6 +3028,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void DrawMurekaControls(float scale)
     {
+        if (!EnableMurekaSongGeneration)
+        {
+            return;
+        }
+
         float panelWidth = Mathf.Min(520f * scale, Screen.width - 36f * scale);
         float panelHeight = 124f * scale;
         float panelX = Mathf.Max(18f * scale, Screen.width - panelWidth - 18f * scale);
@@ -5853,6 +5868,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void GenerateNewSong()
     {
+        if (!EnableMurekaSongGeneration)
+        {
+            murekaStatus = "Song generation is disabled in this build.";
+            return;
+        }
+
         if (isRequestingMurekaSong)
         {
             murekaStatus = "MUREKA request is already running.";
@@ -5870,6 +5891,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void StartMurekaBackendOnly()
     {
+        if (!EnableMurekaSongGeneration)
+        {
+            murekaStatus = "Song generation is disabled in this build.";
+            return;
+        }
+
         if (isStartingMurekaBackend || isRequestingMurekaSong)
         {
             return;
@@ -5892,6 +5919,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private IEnumerator RequestMurekaSong()
     {
+        if (!EnableMurekaSongGeneration)
+        {
+            murekaStatus = "Song generation is disabled in this build.";
+            yield break;
+        }
+
         isRequestingMurekaSong = true;
         ClearCurrentSong();
         string prompt = GetCurrentMurekaPrompt();

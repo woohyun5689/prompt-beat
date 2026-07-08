@@ -33,6 +33,7 @@ LOGIN_PAGE_RE = re.compile(
     r"(login|log in|sign in|sign up|continue with google|google\ub85c|\ub85c\uadf8\uc778|\ud68c\uc6d0\uac00\uc785|\uacc4\uc815)",
     re.IGNORECASE,
 )
+DOWNLOAD_MENU_WAIT_MS = 400
 
 
 def browser_paths() -> list[str]:
@@ -101,6 +102,14 @@ def truthy(value) -> bool:
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def number_setting(job: dict, key: str, env_name: str, default: float) -> float:
+    raw = job.get(key, os.environ.get(env_name, default))
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def looks_like_login_page(page) -> bool:
@@ -907,7 +916,9 @@ def song_signatures(page) -> list[str]:
     return signatures[:12]
 
 
-def save_job_screenshot(page, job_path: Path, label: str) -> None:
+def save_job_screenshot(page, job_path: Path, label: str, enabled: bool = True) -> None:
+    if not enabled:
+        return
     try:
         page.screenshot(path=str(job_path.with_suffix(f".{label}.png")), full_page=False)
     except Exception:
@@ -1022,12 +1033,21 @@ def complete_post_warning_lyrics_flow(page, start_time: float, timeout_seconds: 
     return False
 
 
-def wait_for_new_song(page, baseline: list[str], start_time: float, timeout_seconds: float, job_path: Path) -> None:
+def wait_for_new_song(
+    page,
+    baseline: list[str],
+    start_time: float,
+    timeout_seconds: float,
+    job_path: Path,
+    poll_seconds: float,
+    save_screenshots: bool,
+) -> None:
     deadline = time.time() + min(timeout_seconds, 540.0)
+    poll_ms = int(max(0.5, poll_seconds) * 1000)
     last_log = 0.0
     while time.time() < deadline:
         if click_optimize_lyrics_warning_if_available(page, start_time):
-            save_job_screenshot(page, job_path, "lyrics_optimized_create")
+            save_job_screenshot(page, job_path, "lyrics_optimized_create", enabled=save_screenshots)
             complete_post_warning_lyrics_flow(page, start_time)
             last_log = 0.0
             continue
@@ -1036,14 +1056,14 @@ def wait_for_new_song(page, baseline: list[str], start_time: float, timeout_seco
         new_items = [item for item in current if item not in baseline]
         if new_items:
             log(start_time, f"Possible generated song detected: {new_items[0]}")
-            save_job_screenshot(page, job_path, "generated")
+            save_job_screenshot(page, job_path, "generated", enabled=save_screenshots)
             return
 
         elapsed = time.time() - start_time
         if elapsed - last_log >= 30.0:
             log(start_time, "Waiting for Mureka generation to appear in the library.")
             last_log = elapsed
-        page.wait_for_timeout(5000)
+        page.wait_for_timeout(poll_ms)
 
 
 def save_audio_from_url(context, url: str, download_dir: Path) -> Path | None:
@@ -1092,7 +1112,7 @@ def first_row_download_points(page) -> list[dict]:
                 const style = getComputedStyle(el);
                 if (style.visibility === 'hidden' || style.display === 'none') continue;
                 if (rect.width < 6 || rect.height < 6) continue;
-                if (rect.left < 730 || rect.left > 980 || rect.top < 250 || rect.top > 420) continue;
+                if (rect.left < 730 || rect.left > 980 || rect.top < 150 || rect.top > 420) continue;
                 const text = (el.innerText || el.textContent || '').trim();
                 const aria = el.getAttribute('aria-label') || '';
                 const title = el.getAttribute('title') || '';
@@ -1180,7 +1200,7 @@ def first_row_more_points(page) -> list[dict]:
                 const style = getComputedStyle(el);
                 if (style.visibility === 'hidden' || style.display === 'none') continue;
                 if (rect.width < 16 || rect.height < 16) continue;
-                if (rect.top < 245 || rect.top > 385) continue;
+                if (rect.top < 150 || rect.top > 385) continue;
                 const text = (el.innerText || el.textContent || '').trim();
                 const aria = el.getAttribute('aria-label') || '';
                 const title = el.getAttribute('title') || '';
@@ -1222,12 +1242,12 @@ def _legacy_click_menu_download_parent(page) -> bool:
                 if not item.is_visible():
                     continue
                 item.click(timeout=3000)
-                page.wait_for_timeout(700)
+                page.wait_for_timeout(DOWNLOAD_MENU_WAIT_MS)
                 return True
             except Exception:
                 try:
                     item.hover(timeout=3000)
-                    page.wait_for_timeout(700)
+                    page.wait_for_timeout(DOWNLOAD_MENU_WAIT_MS)
                     return True
                 except Exception:
                     continue
@@ -1238,7 +1258,7 @@ def click_more_menu_download(page, download_dir: Path) -> Path | None:
     for point in first_row_more_points(page):
         try:
             page.mouse.click(float(point["x"]), float(point["y"]))
-            page.wait_for_timeout(700)
+            page.wait_for_timeout(DOWNLOAD_MENU_WAIT_MS)
 
             if not click_menu_download_parent(page):
                 continue
@@ -1265,7 +1285,7 @@ def try_click_download(page, download_dir: Path) -> Path | None:
     for point in first_row_download_points(page):
         try:
             page.mouse.click(float(point["x"]), float(point["y"]))
-            page.wait_for_timeout(700)
+            page.wait_for_timeout(DOWNLOAD_MENU_WAIT_MS)
             downloaded = click_visible_download_option(page, download_dir)
             if downloaded:
                 return downloaded
@@ -1316,7 +1336,7 @@ def click_menu_download_parent(page) -> bool:
     for point in points:
         try:
             page.mouse.move(float(point["x"]), float(point["y"]))
-            page.wait_for_timeout(900)
+            page.wait_for_timeout(DOWNLOAD_MENU_WAIT_MS)
             return True
         except Exception:
             continue
@@ -1355,6 +1375,12 @@ def main() -> int:
     timeout_seconds = float(job.get("timeout_seconds") or 600)
     login_wait_seconds = float(job.get("login_wait_seconds") or os.environ.get("AI_RHYTHM_MUREKA_LOGIN_WAIT_SECONDS", "180"))
     headless = truthy(job.get("headless", os.environ.get("AI_RHYTHM_MUREKA_HEADLESS", "0")))
+    generation_poll_seconds = max(0.5, number_setting(job, "generation_poll_seconds", "AI_RHYTHM_MUREKA_GENERATION_POLL_SECONDS", 2.0))
+    global DOWNLOAD_MENU_WAIT_MS
+    DOWNLOAD_MENU_WAIT_MS = int(max(100, number_setting(job, "download_menu_wait_ms", "AI_RHYTHM_MUREKA_DOWNLOAD_MENU_WAIT_MS", 400)))
+    production_mode = truthy(job.get("production_mode", os.environ.get("AI_RHYTHM_MUREKA_PRODUCTION_MODE", "0")))
+    screenshot_default = "0" if production_mode else "1"
+    save_screenshots = truthy(job.get("save_screenshots", os.environ.get("AI_RHYTHM_MUREKA_SAVE_SCREENSHOTS", screenshot_default)))
     download_dir.mkdir(parents=True, exist_ok=True)
     profile_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1490,7 +1516,15 @@ def main() -> int:
             log(start_time, "Prompt was filled, but create button was not found. Click Create manually; Unity will still watch Downloads.")
         else:
             log(start_time, "Mureka create button clicked.")
-            wait_for_new_song(page, baseline_songs, start_time, timeout_seconds, job_path)
+            wait_for_new_song(
+                page,
+                baseline_songs,
+                start_time,
+                timeout_seconds,
+                job_path,
+                poll_seconds=generation_poll_seconds,
+                save_screenshots=save_screenshots,
+            )
 
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
