@@ -49,12 +49,28 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private struct NoteSpec
     {
         public readonly float Time;
+        public readonly double PreciseTime;
+        public readonly long HitSample;
+        public readonly int SampleRate;
         public readonly NoteKind Kind;
         public readonly int LaneIndex;
 
         public NoteSpec(float time, NoteKind kind, int laneIndex)
         {
             Time = time;
+            PreciseTime = time;
+            HitSample = -1;
+            SampleRate = 0;
+            Kind = kind;
+            LaneIndex = laneIndex;
+        }
+
+        public NoteSpec(long hitSample, int sampleRate, NoteKind kind, int laneIndex)
+        {
+            HitSample = Math.Max(0L, hitSample);
+            SampleRate = Math.Max(1, sampleRate);
+            PreciseTime = HitSample / (double)SampleRate;
+            Time = (float)PreciseTime;
             Kind = kind;
             LaneIndex = laneIndex;
         }
@@ -104,6 +120,37 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public string name;
         public float bpm;
         public float firstBeat;
+    }
+
+    [Serializable]
+    private sealed class JsonSongNoteChart
+    {
+        public int version;
+        public string songName;
+        public int sampleRate;
+        public long totalSamples;
+        public float bpm;
+        public string beatGridMode;
+        public string notePlacementMode;
+        public long firstBeatSample;
+        public long[] beatSamples;
+        public long[] gridSamples;
+        public JsonDifficultyNoteChart[] charts;
+    }
+
+    [Serializable]
+    private sealed class JsonDifficultyNoteChart
+    {
+        public string difficulty;
+        public JsonChartNote[] notes;
+    }
+
+    [Serializable]
+    private sealed class JsonChartNote
+    {
+        public long hitSample;
+        public string kind;
+        public int laneIndex;
     }
 
     private sealed class DifficultyPreset
@@ -236,6 +283,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const string PromptControlName = "MurekaPromptField";
     private const string MusicResourcesPath = "Music";
     private const string SongTimingManifestResourcePath = "Music/bpm_manifest";
+    private const string JsonNoteChartResourcesPath = "NoteCharts";
+    private const float JsonNoteChartPollIntervalSeconds = 10f;
     private const int SingleChartLaneIndex = 1;
     private const string UiClickSoundResourcePath = "TitleScreen/Audio/UI_WC_Score";
     private const string PromptLaneMessage =
@@ -245,6 +294,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private static readonly bool EnableMurekaSongGeneration = false;
     private static readonly bool ShowMurekaControls = false;
+    private static readonly bool UseJsonNoteCharts = true;
     private static readonly bool UseEqualizerDrivenChart = false;
     private static readonly bool UseSingleLaneChart = true;
     private static readonly bool UseBeatFeelChartTuning = true;
@@ -421,6 +471,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private readonly List<ParallaxLayer> parallaxLayers = new List<ParallaxLayer>();
     private readonly Dictionary<string, SongAnalysis> songAnalysisCache = new Dictionary<string, SongAnalysis>();
     private readonly Dictionary<string, SongTimingOverride> songTimingOverrides = new Dictionary<string, SongTimingOverride>();
+    private readonly Dictionary<string, JsonSongNoteChart> jsonNoteCharts = new Dictionary<string, JsonSongNoteChart>();
+    private float nextJsonNoteChartPollTime;
+    private int jsonNoteChartContentHash;
     private readonly HashSet<NoteKind> tutorialKindsShown = new HashSet<NoteKind>();
     private Coroutine previewSongAnalysisRoutine;
     private string previewSongAnalysisKey;
@@ -470,6 +523,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private float generatedChartBeatDuration = 60f / 128f;
     private float generatedSongLength = 14f;
     private int generatedSongSeed;
+    private bool currentChartUsesJson;
     private string generatedSongLabel = "MUREKA SONG";
     private string generatedSongProvider = "MUREKA";
     private string generatedSongWarning = "";
@@ -603,6 +657,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         LoadHitFxAssets();
         SetupAudio();
         LoadSongTimingManifest();
+        LoadJsonNoteCharts();
+        nextJsonNoteChartPollTime = Time.unscaledTime + JsonNoteChartPollIntervalSeconds;
         LoadLocalSongs();
     }
 
@@ -616,6 +672,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void Update()
     {
+        PollJsonNoteCharts();
         ReadInput();
         UpdateSongSelectWorldVisibility();
         if (!resultScreenVisible && resultCharacterRoot != null)
@@ -941,8 +998,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.color = new Color(1f, 1f, 1f, introInfoColor.a * Mathf.Clamp01(introInfoP * 2.2f));
 
         SongAnalysis previewAnalysis = GetSelectedSongPreviewAnalysis();
+        JsonSongNoteChart previewJsonChart = GetJsonNoteChart(selectedSongRawName);
         SongTimingOverride previewTiming = GetSongTimingOverride(selectedSongRawName);
-        string previewBpmText = IsTimingOverrideUsable(previewTiming)
+        string previewBpmText = previewJsonChart != null && previewJsonChart.bpm > 0f
+            ? FormatBpm(previewJsonChart.bpm)
+            : IsTimingOverrideUsable(previewTiming)
             ? FormatBpm(previewTiming.bpm)
             : IsAnalysisUsable(previewAnalysis)
             ? previewAnalysis.Bpm.ToString("0") + " BPM"
@@ -3953,7 +4013,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         gameplayIntroStartTime = Time.unscaledTime;
         songStartDspTime = AudioSettings.dspTime + MusicLeadIn;
-        chartDuration = Mathf.Max(generatedSongLength, chart[chart.Count - 1].Time);
+        chartDuration = Mathf.Max(generatedSongLength, (float)chart[chart.Count - 1].PreciseTime);
         chartFinished = false;
         resultScreenVisible = false;
 
@@ -3964,7 +4024,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             CreateNote(
                 spec.Kind,
                 spec.LaneIndex,
-                songStartDspTime + spec.Time + audioVisualLatency,
+                songStartDspTime + spec.PreciseTime + audioVisualLatency,
                 showInputGuide);
             if (showInputGuide)
             {
@@ -5488,6 +5548,270 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
     }
 
+    private void PollJsonNoteCharts()
+    {
+        if (!UseJsonNoteCharts || Time.unscaledTime < nextJsonNoteChartPollTime)
+        {
+            return;
+        }
+
+        nextJsonNoteChartPollTime = Time.unscaledTime + JsonNoteChartPollIntervalSeconds;
+        int previousHash = jsonNoteChartContentHash;
+        LoadJsonNoteCharts(false);
+        if (jsonNoteChartContentHash != previousHash)
+        {
+            Debug.Log("[JSON Chart] Poll detected updated chart content. The next chart start will use it.");
+        }
+    }
+
+    private void LoadJsonNoteCharts(bool logResult = true)
+    {
+        if (!UseJsonNoteCharts)
+        {
+            jsonNoteCharts.Clear();
+            jsonNoteChartContentHash = 0;
+            return;
+        }
+
+        TextAsset[] chartAssets = Resources.LoadAll<TextAsset>(JsonNoteChartResourcesPath);
+        Array.Sort(chartAssets, (first, second) => string.CompareOrdinal(first.name, second.name));
+        Dictionary<string, JsonSongNoteChart> loadedCharts = new Dictionary<string, JsonSongNoteChart>();
+        int contentHash = 17;
+        for (int i = 0; i < chartAssets.Length; i++)
+        {
+            TextAsset chartAsset = chartAssets[i];
+            if (chartAsset == null || string.IsNullOrWhiteSpace(chartAsset.text))
+            {
+                continue;
+            }
+
+            unchecked
+            {
+                contentHash = contentHash * 31 + chartAsset.name.GetHashCode();
+                contentHash = contentHash * 31 + chartAsset.text.GetHashCode();
+            }
+
+            try
+            {
+                JsonSongNoteChart jsonChart = JsonUtility.FromJson<JsonSongNoteChart>(chartAsset.text);
+                if (jsonChart == null
+                    || jsonChart.version != 1
+                    || string.IsNullOrWhiteSpace(jsonChart.songName)
+                    || jsonChart.sampleRate <= 0
+                    || jsonChart.charts == null)
+                {
+                    Debug.LogWarning("Invalid JSON note chart: " + chartAsset.name);
+                    continue;
+                }
+
+                string key = NormalizeSongTimingKey(jsonChart.songName);
+                if (string.IsNullOrEmpty(key))
+                {
+                    continue;
+                }
+
+                loadedCharts[key] = jsonChart;
+            }
+            catch (ArgumentException ex)
+            {
+                Debug.LogWarning("Could not parse JSON note chart " + chartAsset.name + ": " + ex.Message);
+            }
+        }
+
+        jsonNoteCharts.Clear();
+        foreach (KeyValuePair<string, JsonSongNoteChart> pair in loadedCharts)
+        {
+            jsonNoteCharts[pair.Key] = pair.Value;
+        }
+        jsonNoteChartContentHash = contentHash;
+        if (logResult)
+        {
+            Debug.Log("[JSON Chart] Loaded " + jsonNoteCharts.Count + " song chart(s) from Resources/" + JsonNoteChartResourcesPath + ". Poll interval: " + JsonNoteChartPollIntervalSeconds.ToString("0") + " seconds.");
+        }
+    }
+
+    private bool TryBuildChartFromJson(string songName, AudioClip clip)
+    {
+        currentChartUsesJson = false;
+        if (!UseJsonNoteCharts || clip == null || string.IsNullOrWhiteSpace(songName))
+        {
+            return false;
+        }
+
+        if (!jsonNoteCharts.TryGetValue(NormalizeSongTimingKey(songName), out JsonSongNoteChart jsonChart))
+        {
+            return false;
+        }
+
+        JsonDifficultyNoteChart difficultyChart = null;
+        string difficultyLabel = GetDifficultyPreset().Label;
+        for (int i = 0; i < jsonChart.charts.Length; i++)
+        {
+            JsonDifficultyNoteChart candidate = jsonChart.charts[i];
+            if (candidate != null
+                && string.Equals(candidate.difficulty, difficultyLabel, StringComparison.OrdinalIgnoreCase))
+            {
+                difficultyChart = candidate;
+                break;
+            }
+        }
+
+        if (difficultyChart == null || difficultyChart.notes == null || difficultyChart.notes.Length == 0)
+        {
+            Debug.LogWarning("[JSON Chart] Missing " + difficultyLabel + " chart for " + songName + ".");
+            return false;
+        }
+
+        bool usesDirectOnsets = UsesDirectOnsetTiming(jsonChart);
+        HashSet<long> validGridSamples = usesDirectOnsets
+            ? new HashSet<long>()
+            : jsonChart.gridSamples != null && jsonChart.gridSamples.Length > 0
+                ? new HashSet<long>(jsonChart.gridSamples)
+                : BuildJsonGridSampleSet(jsonChart.beatSamples);
+        int runtimeSampleRate = Mathf.Max(1, clip.frequency);
+        long previousRuntimeSample = -1;
+        List<NoteSpec> loadedNotes = new List<NoteSpec>(difficultyChart.notes.Length);
+        for (int i = 0; i < difficultyChart.notes.Length; i++)
+        {
+            JsonChartNote jsonNote = difficultyChart.notes[i];
+            if (jsonNote == null || jsonNote.hitSample < 0)
+            {
+                Debug.LogWarning("[JSON Chart] Invalid note at index " + i + " for " + songName + ".");
+                return false;
+            }
+
+            if (validGridSamples.Count > 0 && !validGridSamples.Contains(jsonNote.hitSample))
+            {
+                Debug.LogWarning("[JSON Chart] Off-grid note at sample " + jsonNote.hitSample + " for " + songName + ".");
+                return false;
+            }
+
+            if (!Enum.TryParse(jsonNote.kind, true, out NoteKind kind))
+            {
+                Debug.LogWarning("[JSON Chart] Unknown note kind '" + jsonNote.kind + "' for " + songName + ".");
+                return false;
+            }
+
+            long runtimeSample = ConvertSampleRate(jsonNote.hitSample, jsonChart.sampleRate, runtimeSampleRate);
+            if (runtimeSample <= previousRuntimeSample || runtimeSample >= clip.samples)
+            {
+                Debug.LogWarning("[JSON Chart] Invalid note order/range at sample " + runtimeSample + " for " + songName + ".");
+                return false;
+            }
+
+            loadedNotes.Add(new NoteSpec(
+                runtimeSample,
+                runtimeSampleRate,
+                kind,
+                Mathf.Clamp(jsonNote.laneIndex, 0, NoteYs.Length - 1)));
+            previousRuntimeSample = runtimeSample;
+        }
+
+        if (jsonChart.totalSamples > 0)
+        {
+            long expectedRuntimeSamples = ConvertSampleRate(jsonChart.totalSamples, jsonChart.sampleRate, runtimeSampleRate);
+            long sampleDifference = Math.Abs(expectedRuntimeSamples - clip.samples);
+            if (sampleDifference > 2)
+            {
+                Debug.LogWarning(string.Format(
+                    "[JSON Chart] {0} imported length differs by {1} sample(s); note samples were rate-converted to the runtime clip.",
+                    songName,
+                    sampleDifference));
+            }
+        }
+
+        chart.Clear();
+        chart.AddRange(loadedNotes);
+        if (jsonChart.bpm > 0f)
+        {
+            generatedBpm = jsonChart.bpm;
+            generatedChartBeatDuration = 60f / generatedBpm;
+        }
+
+        ApplyJsonTimingToAnalysis(jsonChart, currentSongAnalysis, runtimeSampleRate);
+
+        currentChartUsesJson = true;
+        Debug.Log(string.Format(
+            "[JSON Chart] {0} - {1}: {2} notes, {3} Hz, {4}, sample-locked.",
+            songName,
+            difficultyLabel,
+            chart.Count,
+            runtimeSampleRate,
+            usesDirectOnsets ? "direct onset" : "beat grid"));
+        return true;
+    }
+
+    private static void ApplyJsonTimingToAnalysis(JsonSongNoteChart jsonChart, SongAnalysis analysis, int runtimeSampleRate)
+    {
+        if (jsonChart == null || analysis == null || runtimeSampleRate <= 0)
+        {
+            return;
+        }
+
+        if (jsonChart.bpm > 0f)
+        {
+            analysis.Bpm = jsonChart.bpm;
+            analysis.BeatDuration = 60f / jsonChart.bpm;
+        }
+
+        if (UsesDirectOnsetTiming(jsonChart))
+        {
+            return;
+        }
+
+        long firstBeat = ConvertSampleRate(jsonChart.firstBeatSample, jsonChart.sampleRate, runtimeSampleRate);
+        analysis.BeatOffset = firstBeat / (float)runtimeSampleRate;
+        analysis.UsesTimingOverride = true;
+        analysis.BeatTimes.Clear();
+        if (jsonChart.beatSamples == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < jsonChart.beatSamples.Length; i++)
+        {
+            long beatSample = ConvertSampleRate(jsonChart.beatSamples[i], jsonChart.sampleRate, runtimeSampleRate);
+            analysis.BeatTimes.Add(beatSample / (float)runtimeSampleRate);
+        }
+    }
+
+    private static HashSet<long> BuildJsonGridSampleSet(long[] beatSamples)
+    {
+        HashSet<long> gridSamples = new HashSet<long>();
+        if (beatSamples == null)
+        {
+            return gridSamples;
+        }
+
+        for (int i = 0; i < beatSamples.Length; i++)
+        {
+            gridSamples.Add(beatSamples[i]);
+            if (i + 1 < beatSamples.Length)
+            {
+                gridSamples.Add((long)Math.Round((beatSamples[i] + beatSamples[i + 1]) * 0.5, MidpointRounding.ToEven));
+            }
+        }
+
+        return gridSamples;
+    }
+
+    private static bool UsesDirectOnsetTiming(JsonSongNoteChart jsonChart)
+    {
+        return jsonChart != null
+            && string.Equals(jsonChart.beatGridMode, "none", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(jsonChart.notePlacementMode, "direct_audio_onsets", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static long ConvertSampleRate(long sample, int sourceRate, int targetRate)
+    {
+        if (sourceRate <= 0 || targetRate <= 0 || sourceRate == targetRate)
+        {
+            return sample;
+        }
+
+        return (long)Math.Round(sample * targetRate / (double)sourceRate, MidpointRounding.AwayFromZero);
+    }
+
     private SongTimingOverride GetSongTimingOverride(string songName)
     {
         if (string.IsNullOrWhiteSpace(songName))
@@ -5497,6 +5821,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         songTimingOverrides.TryGetValue(NormalizeSongTimingKey(songName), out SongTimingOverride timing);
         return timing;
+    }
+
+    private JsonSongNoteChart GetJsonNoteChart(string songName)
+    {
+        if (string.IsNullOrWhiteSpace(songName))
+        {
+            return null;
+        }
+
+        jsonNoteCharts.TryGetValue(NormalizeSongTimingKey(songName), out JsonSongNoteChart jsonChart);
+        return jsonChart;
     }
 
     private static bool IsTimingOverrideUsable(SongTimingOverride timing)
@@ -5917,12 +6252,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         generatedSongLength = Mathf.Max(4f, clip.length);
         currentSongAnalysis = analysis;
 
-        if (analysis != null)
+        bool loadedJsonChart = TryBuildChartFromJson(song.Name, clip);
+        if (!loadedJsonChart && analysis != null)
         {
             generatedBpm = analysis.Bpm;
             BuildChartFromAnalysis(analysis, CreateChartRandom());
         }
-        else
+        else if (!loadedJsonChart)
         {
             generatedBpm = 128f;
             BuildChartForMurekaSong(CreateChartRandom());
@@ -5934,7 +6270,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         songSelectionVisible = false;
         isLoadingLocalSong = false;
         HideLoadingScreenSmoothly();
-        string chartMode = UseEqualizerDrivenChart && analysis != null ? "EQ note chart" : "detected " + generatedBpm.ToString("0.0") + " BPM";
+        string chartMode = currentChartUsesJson
+            ? "JSON sample chart"
+            : UseEqualizerDrivenChart && analysis != null
+                ? "EQ note chart"
+                : "detected " + generatedBpm.ToString("0.0") + " BPM";
         murekaStatus = "Playing " + song.Name + " - " + GetDifficultyPreset().Label + " - " + chartMode;
     }
 
@@ -5994,7 +6334,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void RebuildCurrentChartForDifficulty()
     {
-        if (currentSongAnalysis != null)
+        if (TryBuildChartFromJson(generatedSongLabel, currentSongClip))
+        {
+            // JSON contains a separate chart for every difficulty.
+        }
+        else if (currentSongAnalysis != null)
         {
             BuildChartFromAnalysis(currentSongAnalysis, CreateChartRandom());
         }
@@ -6172,6 +6516,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         currentSongClip = null;
         currentSongAnalysis = null;
+        currentChartUsesJson = false;
         selectedLocalSongIndex = -1;
 
         if (generatedSongClip != null)
@@ -6759,6 +7104,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void BuildChartFromAnalysis(SongAnalysis analysis, System.Random rng)
     {
+        currentChartUsesJson = false;
         if (UseEqualizerDrivenChart)
         {
             BuildChartFromEqualizerPeaks(analysis, rng);
@@ -7717,6 +8063,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void BuildChartForMurekaSong(System.Random rng)
     {
+        currentChartUsesJson = false;
         chart.Clear();
         DifficultyPreset difficulty = GetDifficultyPreset();
 
