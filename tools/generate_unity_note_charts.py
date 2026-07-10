@@ -87,6 +87,37 @@ STRICT_V6_BUILD_TIMING = {
     },
 }
 
+ONBEAT_DIFFICULTY_SETTINGS = {
+    "EASY": {
+        "density": 0.75,
+        "color_run_length": 4,
+        "wheel_window_seconds": 24.0,
+        "wheel_min_gap_seconds": 18.0,
+        "wheel_minimum_strength": 0.30,
+    },
+    "NORMAL": {
+        "density": 1.00,
+        "color_run_length": 2,
+        "wheel_window_seconds": 15.0,
+        "wheel_min_gap_seconds": 11.0,
+        "wheel_minimum_strength": 0.16,
+    },
+    "HARD": {
+        "density": 1.00,
+        "color_run_length": 1,
+        "wheel_window_seconds": 9.0,
+        "wheel_min_gap_seconds": 7.0,
+        "wheel_minimum_strength": 0.08,
+    },
+}
+
+TAIKO_HARD_COLOR_PATTERNS = (
+    (True, False, True, True, False, True, False, False, True, False),
+    (False, True, False, False, True, False, True, True, False, True),
+    (True, True, False, True, False, False, True, False, True, False),
+    (False, False, True, False, True, True, False, True, False, True),
+)
+
 PATTERNS = {
     2: ((0, 4), (0, 2), (0, 6)),
     3: ((0, 2, 4), (0, 4, 6), (0, 2, 6), (0, 3, 6), (0, 4, 7)),
@@ -1800,6 +1831,361 @@ def generate_strict_v6_charts(audio, sample_rate, timing_profile=None):
     return features, beat_samples, grid_samples, charts
 
 
+def build_onbeat_candidates(
+    features,
+    precision,
+    total_samples,
+    sample_rate,
+    timing_profile=None,
+):
+    beat_samples = build_strict_beat_grid(
+        features,
+        precision,
+        total_samples,
+        sample_rate,
+        timing_profile,
+    )
+    period_samples = float(features["strict_period_samples"])
+    phase_samples = float(features["strict_phase_samples"])
+    candidates = []
+    grid_samples = []
+    for beat_index, beat_sample in enumerate(beat_samples):
+        for subdivision in range(4):
+            expected_sample = phase_samples + (
+                beat_index + subdivision / 4.0
+            ) * period_samples
+            if expected_sample >= total_samples:
+                continue
+            sample = (
+                int(beat_sample)
+                if subdivision == 0
+                else int(clamp(round(expected_sample), 0, total_samples - 1))
+            )
+            grid_samples.append(sample)
+            strength, energy = precision_window_values(
+                precision,
+                sample,
+                int(round(0.028 * sample_rate)),
+            )
+            beat_in_bar = beat_index % BEATS_PER_BAR
+            accent_bonus = 0.0
+            if subdivision == 0:
+                accent_bonus = 0.12 if beat_in_bar == 0 else 0.05 if beat_in_bar == 2 else 0.0
+            elif subdivision == 2:
+                accent_bonus = 0.025
+            candidates.append({
+                "hitSample": sample,
+                "beatIndex": beat_index,
+                "subdivision": subdivision,
+                "strength": strength,
+                "energy": energy,
+                "score": strength * 0.72 + energy * 0.28 + accent_bonus,
+            })
+    return candidates, beat_samples, sorted(set(grid_samples))
+
+
+def choose_onbeat_wheel_indices(selected, settings, sample_rate):
+    if not selected:
+        return set()
+
+    wheel_window_samples = int(round(settings["wheel_window_seconds"] * sample_rate))
+    minimum_gap_samples = int(round(settings["wheel_min_gap_seconds"] * sample_rate))
+    first_window_sample = selected[0]["hitSample"] + int(round(4.0 * sample_rate))
+    last_window_sample = selected[-1]["hitSample"] - int(round(2.0 * sample_rate))
+    minimum_strength = settings["wheel_minimum_strength"]
+    chosen = set()
+    last_wheel_sample = -minimum_gap_samples
+
+    window_start = first_window_sample
+    while window_start <= last_window_sample:
+        window_end = min(last_window_sample + 1, window_start + wheel_window_samples)
+        eligible = [
+            (index, candidate)
+            for index, candidate in enumerate(selected)
+            if window_start <= candidate["hitSample"] < window_end
+            and candidate["subdivision"] == 0
+            and candidate["hitSample"] - last_wheel_sample >= minimum_gap_samples
+            and candidate["strength"] >= minimum_strength
+        ]
+        if eligible:
+            index, candidate = max(
+                eligible,
+                key=lambda item: item[1]["strength"] * 0.68
+                + item[1]["energy"] * 0.22
+                + (0.10 if item[1]["beatIndex"] % BEATS_PER_BAR == 0 else 0.0),
+            )
+            chosen.add(index)
+            last_wheel_sample = candidate["hitSample"]
+        window_start += wheel_window_samples
+    return chosen
+
+
+def select_taiko_hard_extras(candidates, active_bar_indices):
+    candidates_by_bar = {}
+    for candidate in candidates:
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        if bar_index in active_bar_indices:
+            candidates_by_bar.setdefault(bar_index, []).append(candidate)
+
+    extras = []
+    last_burst_bar = -100
+    for bar_index in sorted(active_bar_indices):
+        bar_candidates = candidates_by_bar.get(bar_index, [])
+        main_candidates = [
+            candidate for candidate in bar_candidates
+            if candidate["subdivision"] == 0
+        ]
+        half_candidates = [
+            candidate for candidate in bar_candidates
+            if candidate["subdivision"] == 2
+        ]
+        if not main_candidates or not half_candidates:
+            continue
+
+        mean_energy = float(np.mean([
+            candidate["energy"] for candidate in main_candidates
+        ]))
+        peak_strength = max(
+            candidate["strength"] for candidate in bar_candidates
+        )
+        half_target = 1
+        if mean_energy >= 0.85 or peak_strength >= 1.00:
+            half_target += 1
+        if mean_energy >= 1.20 and peak_strength >= 1.35:
+            half_target += 1
+        selected_halves = sorted(
+            half_candidates,
+            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
+            reverse=True,
+        )[: min(half_target, len(half_candidates))]
+        extras.extend(selected_halves)
+
+        burst_count = 0
+        if (
+            bar_index - last_burst_bar >= 3
+            and mean_energy >= 1.18
+            and peak_strength >= 1.25
+        ):
+            burst_count = 1
+        if burst_count <= 0:
+            continue
+        last_burst_bar = bar_index
+
+        quarter_by_beat = {
+            candidate["beatIndex"]: candidate
+            for candidate in bar_candidates
+            if candidate["subdivision"] == 1
+        }
+        burst_halves = sorted(
+            selected_halves,
+            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
+            reverse=True,
+        )[:burst_count]
+        for half_candidate in burst_halves:
+            quarter_candidate = quarter_by_beat.get(half_candidate["beatIndex"])
+            if quarter_candidate is not None:
+                extras.append(quarter_candidate)
+    return extras
+
+
+def select_normal_accent_extras(candidates, active_bar_indices):
+    candidates_by_bar = {}
+    for candidate in candidates:
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        if bar_index in active_bar_indices:
+            candidates_by_bar.setdefault(bar_index, []).append(candidate)
+
+    extras = []
+    last_accent_bar = -100
+    for bar_index in sorted(active_bar_indices):
+        if bar_index - last_accent_bar < 2:
+            continue
+        bar_candidates = candidates_by_bar.get(bar_index, [])
+        main_candidates = [
+            candidate for candidate in bar_candidates
+            if candidate["subdivision"] == 0
+        ]
+        half_candidates = [
+            candidate for candidate in bar_candidates
+            if candidate["subdivision"] == 2
+            and candidate["strength"] >= 0.08
+        ]
+        if not main_candidates or not half_candidates:
+            continue
+
+        mean_energy = float(np.mean([
+            candidate["energy"] for candidate in main_candidates
+        ]))
+        peak_strength = max(
+            candidate["strength"] for candidate in bar_candidates
+        )
+        if mean_energy < 0.88 and peak_strength < 1.05:
+            continue
+
+        extras.append(max(
+            half_candidates,
+            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
+        ))
+        last_accent_bar = bar_index
+    return extras
+
+
+def select_onbeat_difficulty_chart(candidates, difficulty, sample_rate):
+    settings = ONBEAT_DIFFICULTY_SETTINGS[difficulty]
+    main_candidates = [
+        candidate for candidate in candidates
+        if candidate["subdivision"] == 0
+    ]
+    selected = []
+    active_beat_count = 0
+    active_bar_indices = set()
+    for bar_start in range(0, len(main_candidates), BEATS_PER_BAR):
+        bar_candidates = main_candidates[bar_start : bar_start + BEATS_PER_BAR]
+        if not bar_candidates:
+            continue
+        if (
+            max(candidate["strength"] for candidate in bar_candidates) < 0.06
+            and max(candidate["energy"] for candidate in bar_candidates) < 0.08
+        ):
+            continue
+
+        active_beat_count += len(bar_candidates)
+        active_bar_indices.add(bar_candidates[0]["beatIndex"] // BEATS_PER_BAR)
+        target = max(1, int(math.ceil(len(bar_candidates) * settings["density"])))
+        ranked = sorted(
+            bar_candidates,
+            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
+            reverse=True,
+        )
+        selected.extend(ranked[:target])
+
+    burst_note_count = 0
+    if difficulty == "NORMAL":
+        selected.extend(select_normal_accent_extras(
+            candidates,
+            active_bar_indices,
+        ))
+    elif difficulty == "HARD":
+        hard_extras = select_taiko_hard_extras(candidates, active_bar_indices)
+        selected.extend(hard_extras)
+
+    selected.sort(key=lambda candidate: candidate["hitSample"])
+    wheel_indices = choose_onbeat_wheel_indices(selected, settings, sample_rate)
+    wheel_samples = {
+        selected[index]["hitSample"] for index in wheel_indices
+    }
+    if difficulty in ("NORMAL", "HARD") and wheel_samples:
+        wheel_lead_seconds = 0.34 if difficulty == "HARD" else 0.30
+        wheel_recovery_seconds = 0.42 if difficulty == "HARD" else 0.36
+        wheel_lead_samples = int(round(wheel_lead_seconds * sample_rate))
+        wheel_recovery_samples = int(round(wheel_recovery_seconds * sample_rate))
+        selected = [
+            candidate
+            for candidate in selected
+            if candidate["subdivision"] == 0
+            or all(
+                candidate["hitSample"] <= wheel_sample - wheel_lead_samples
+                or candidate["hitSample"] >= wheel_sample + wheel_recovery_samples
+                for wheel_sample in wheel_samples
+            )
+        ]
+    burst_note_count = sum(
+        candidate["subdivision"] > 0 for candidate in selected
+    )
+    quarter_burst_note_count = sum(
+        candidate["subdivision"] in (1, 3) for candidate in selected
+    )
+    color_run_length = settings["color_run_length"]
+    notes = []
+    hard_bar_note_counts = {}
+    for index, candidate in enumerate(selected):
+        if difficulty == "HARD":
+            bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+            local_index = hard_bar_note_counts.get(bar_index, 0)
+            pattern = TAIKO_HARD_COLOR_PATTERNS[
+                bar_index % len(TAIKO_HARD_COLOR_PATTERNS)
+            ]
+            good = pattern[local_index % len(pattern)]
+            hard_bar_note_counts[bar_index] = local_index + 1
+        else:
+            good = (index // color_run_length) % 2 == 0
+        is_wheel = candidate["hitSample"] in wheel_samples
+        if is_wheel:
+            kind = "GoodWheelUp" if good else "BadWheelDown"
+        else:
+            kind = "GoodTap" if good else "BadTap"
+        notes.append({
+            "hitSample": int(candidate["hitSample"]),
+            "kind": kind,
+            "laneIndex": 1,
+        })
+
+    actual_density = len(selected) / max(1, active_beat_count) * 100.0
+    return {
+        "difficulty": difficulty,
+        "targetDensityPercent": int(round(settings["density"] * 100.0)),
+        "actualDensityPercent": round(actual_density, 3),
+        "activeBeatCount": active_beat_count,
+        "colorRunLength": color_run_length,
+        "colorPattern": "taiko_irregular" if difficulty == "HARD" else "fixed_runs",
+        "burstNoteCount": burst_note_count,
+        "quarterBurstNoteCount": quarter_burst_note_count,
+        "wheelWindowSeconds": settings["wheel_window_seconds"],
+        "wheelMinimumGapSeconds": settings["wheel_min_gap_seconds"],
+        "notes": notes,
+    }
+
+
+def generate_onbeat_difficulty_charts(audio, sample_rate, timing_profile=None):
+    features = (
+        {}
+        if timing_profile is not None
+        else detect_audio_pulse_grid(audio, sample_rate)
+    )
+    precision = build_precision_features(audio, sample_rate)
+    candidates, beat_samples, grid_samples = build_onbeat_candidates(
+        features,
+        precision,
+        len(audio),
+        sample_rate,
+        timing_profile,
+    )
+    charts = [
+        select_onbeat_difficulty_chart(candidates, difficulty, sample_rate)
+        for difficulty in ("EASY", "NORMAL", "HARD")
+    ]
+    chart_by_difficulty = {
+        chart["difficulty"]: chart for chart in charts
+    }
+    beat_sample_set = set(beat_samples)
+    for lower_name, upper_name in (("NORMAL", "HARD"), ("EASY", "NORMAL")):
+        lower_chart = chart_by_difficulty[lower_name]
+        upper_samples = {
+            note["hitSample"]
+            for note in chart_by_difficulty[upper_name]["notes"]
+        }
+        previous_count = len(lower_chart["notes"])
+        lower_chart["notes"] = [
+            note for note in lower_chart["notes"]
+            if note["hitSample"] in upper_samples
+        ]
+        lower_chart["nestedNotesRemoved"] = (
+            previous_count - len(lower_chart["notes"])
+        )
+        lower_chart["actualDensityPercent"] = round(
+            len(lower_chart["notes"])
+            / max(1, lower_chart["activeBeatCount"])
+            * 100.0,
+            3,
+        )
+        lower_chart["burstNoteCount"] = sum(
+            note["hitSample"] not in beat_sample_set
+            for note in lower_chart["notes"]
+        )
+        lower_chart["quarterBurstNoteCount"] = 0
+    return features, beat_samples, grid_samples, charts
+
+
 def build_direct_onset_candidates(
     precision,
     sample_rate,
@@ -2148,7 +2534,7 @@ def generate_all(project):
         pcm = unity_pcm[pcm_key]
         sample_rate = pcm["sample_rate"]
         audio_sha256 = hashlib.sha256(audio_path.read_bytes()).hexdigest()
-        features, beats, grid_samples, charts = generate_strict_v6_charts(
+        features, beats, grid_samples, charts = generate_onbeat_difficulty_charts(
             pcm["audio"],
             sample_rate,
             STRICT_V6_BUILD_TIMING[output_name],
@@ -2158,10 +2544,12 @@ def generate_all(project):
         counts = [len(chart["notes"]) for chart in charts]
         document = {
             "version": 1,
-            "generator": "unity_pcm_strict_beat_grid_v6",
+            "generator": "unity_pcm_tiered_taiko_v4",
             "pcmSource": "Unity AudioClip.GetData",
             "timingSource": "Unity PCM calibrated constant musical beat grid",
-            "noteTimingPolicy": "strict beat subdivisions; no transient snapping",
+            "noteTimingPolicy": "strict quantized grid; HARD adds exact half-beat and quarter-beat bursts",
+            "difficultyPolicy": "EASY 75% main beats; NORMAL full main beats plus sparse half-beat accents; HARD irregular taiko-style bursts",
+            "clusterPolicy": "quarter-beat bursts only in spaced strong bars; NORMAL/HARD wheel guards remove adjacent extras",
             "beatGridMode": "constant",
             "beatGridSubdivision": 4,
             "beatPeriodSamples": round(features["strict_period_samples"], 6),
@@ -2203,7 +2591,7 @@ def generate_all(project):
         target.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(
             f"{output_name}: {sample_rate} Hz, "
-            f"strict={features['bpm']:.3f} BPM, "
+            f"quantized={features['bpm']:.3f} BPM, "
             f"beats={len(beats)}, grid={len(grid_samples)}, E/N/H={counts}"
         )
 

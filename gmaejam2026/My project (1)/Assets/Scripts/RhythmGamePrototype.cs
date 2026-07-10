@@ -229,7 +229,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float HitX = -3.75f;
     private const float SpawnX = 8.75f;
     private const float DespawnX = -8.5f;
+    private const float EasyNoteSpeed = 5.10f;
     private const float NoteSpeed = 5.66f;
+    private const float HardNoteSpeed = 6.35f;
     private const float HitWindow = 0.34f;
     private const float WheelHitWindow = 0.40f;
     private const float TapMissInputWindow = 0.58f;
@@ -3727,6 +3729,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         bool allJudged = true;
         double now = GetJudgeDspTime();
+        float noteSpeed = selectedDifficulty == RhythmDifficulty.Easy
+            ? EasyNoteSpeed
+            : selectedDifficulty == RhythmDifficulty.Hard
+                ? HardNoteSpeed
+                : NoteSpeed;
 
         for (int i = 0; i < notes.Count; i++)
         {
@@ -3743,7 +3750,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 continue;
             }
 
-            float x = HitX + (float)((note.HitDspTime - now) * NoteSpeed);
+            float x = HitX + (float)((note.HitDspTime - now) * noteSpeed);
 
             if (note.Root != null)
             {
