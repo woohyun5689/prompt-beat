@@ -118,6 +118,8 @@ TAIKO_HARD_COLOR_PATTERNS = (
     (False, False, True, False, True, True, False, True, False, True),
 )
 
+HARD_MINIMUM_NOTE_GAP_SECONDS = 0.20
+
 PATTERNS = {
     2: ((0, 4), (0, 2), (0, 6)),
     3: ((0, 2, 4), (0, 4, 6), (0, 2, 6), (0, 3, 6), (0, 4, 7)),
@@ -1850,7 +1852,7 @@ def build_onbeat_candidates(
     candidates = []
     grid_samples = []
     for beat_index, beat_sample in enumerate(beat_samples):
-        for subdivision in range(4):
+        for subdivision in (0, 2):
             expected_sample = phase_samples + (
                 beat_index + subdivision / 4.0
             ) * period_samples
@@ -1928,7 +1930,6 @@ def select_taiko_hard_extras(candidates, active_bar_indices):
             candidates_by_bar.setdefault(bar_index, []).append(candidate)
 
     extras = []
-    last_burst_bar = -100
     for bar_index in sorted(active_bar_indices):
         bar_candidates = candidates_by_bar.get(bar_index, [])
         main_candidates = [
@@ -1959,32 +1960,6 @@ def select_taiko_hard_extras(candidates, active_bar_indices):
             reverse=True,
         )[: min(half_target, len(half_candidates))]
         extras.extend(selected_halves)
-
-        burst_count = 0
-        if (
-            bar_index - last_burst_bar >= 3
-            and mean_energy >= 1.18
-            and peak_strength >= 1.25
-        ):
-            burst_count = 1
-        if burst_count <= 0:
-            continue
-        last_burst_bar = bar_index
-
-        quarter_by_beat = {
-            candidate["beatIndex"]: candidate
-            for candidate in bar_candidates
-            if candidate["subdivision"] == 1
-        }
-        burst_halves = sorted(
-            selected_halves,
-            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
-            reverse=True,
-        )[:burst_count]
-        for half_candidate in burst_halves:
-            quarter_candidate = quarter_by_beat.get(half_candidate["beatIndex"])
-            if quarter_candidate is not None:
-                extras.append(quarter_candidate)
     return extras
 
 
@@ -2089,6 +2064,19 @@ def select_onbeat_difficulty_chart(candidates, difficulty, sample_rate):
                 for wheel_sample in wheel_samples
             )
         ]
+    if difficulty == "HARD":
+        minimum_gap_samples = int(round(
+            HARD_MINIMUM_NOTE_GAP_SECONDS * sample_rate
+        ))
+        spaced = []
+        for candidate in selected:
+            if (
+                not spaced
+                or candidate["hitSample"] - spaced[-1]["hitSample"]
+                >= minimum_gap_samples
+            ):
+                spaced.append(candidate)
+        selected = spaced
     burst_note_count = sum(
         candidate["subdivision"] > 0 for candidate in selected
     )
@@ -2544,14 +2532,14 @@ def generate_all(project):
         counts = [len(chart["notes"]) for chart in charts]
         document = {
             "version": 1,
-            "generator": "unity_pcm_tiered_taiko_v4",
+            "generator": "unity_pcm_nonoverlap_speed_v5",
             "pcmSource": "Unity AudioClip.GetData",
             "timingSource": "Unity PCM calibrated constant musical beat grid",
-            "noteTimingPolicy": "strict quantized grid; HARD adds exact half-beat and quarter-beat bursts",
-            "difficultyPolicy": "EASY 75% main beats; NORMAL full main beats plus sparse half-beat accents; HARD irregular taiko-style bursts",
-            "clusterPolicy": "quarter-beat bursts only in spaced strong bars; NORMAL/HARD wheel guards remove adjacent extras",
+            "noteTimingPolicy": "strict main-beat and half-beat grid; no quarter-beat notes",
+            "difficultyPolicy": "EASY 75% main beats; NORMAL sparse half-beat accents; HARD denser irregular half-beat patterns",
+            "clusterPolicy": "HARD minimum note gap 0.20 seconds; NORMAL/HARD wheel guards remove adjacent extras",
             "beatGridMode": "constant",
-            "beatGridSubdivision": 4,
+            "beatGridSubdivision": 2,
             "beatPeriodSamples": round(features["strict_period_samples"], 6),
             "beatPhaseSamples": round(features["strict_phase_samples"], 6),
             "precisionHopSamples": 32,

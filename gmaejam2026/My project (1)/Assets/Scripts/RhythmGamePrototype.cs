@@ -231,7 +231,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float DespawnX = -8.5f;
     private const float EasyNoteSpeed = 5.10f;
     private const float NoteSpeed = 5.66f;
-    private const float HardNoteSpeed = 6.35f;
+    private const float HardNoteSpeed = 7.9375f;
     private const float HitWindow = 0.34f;
     private const float WheelHitWindow = 0.40f;
     private const float TapMissInputWindow = 0.58f;
