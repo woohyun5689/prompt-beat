@@ -1957,6 +1957,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         if (string.IsNullOrEmpty(resourceName))
         {
+            resourceName = string.IsNullOrWhiteSpace(songName) ? string.Empty : songName.Trim();
+        }
+
+        if (string.IsNullOrEmpty(resourceName))
+        {
             return null;
         }
 

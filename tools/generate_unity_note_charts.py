@@ -326,7 +326,7 @@ def load_unity_pcm_export(export_folder):
     entries = {}
     for clip in manifest.get("clips", []):
         raw_path = export_folder / clip["file"]
-        audio = np.fromfile(raw_path, dtype="<f4")
+        audio = np.memmap(raw_path, dtype="<f4", mode="r")
         if len(audio) != int(clip["samples"]):
             raise ValueError(
                 f"Unity PCM sample mismatch for {clip['name']}: "
@@ -1900,16 +1900,17 @@ def build_onbeat_candidates(
     grid_samples = []
     for beat_index, beat_sample in enumerate(beat_samples):
         for subdivision in (0, 2):
-            expected_sample = phase_samples + (
-                beat_index + subdivision / 4.0
-            ) * period_samples
-            if expected_sample >= total_samples:
-                continue
-            sample = (
-                int(beat_sample)
-                if subdivision == 0
-                else int(clamp(round(expected_sample), 0, total_samples - 1))
-            )
+            if subdivision == 0:
+                sample = int(beat_sample)
+                if sample < 0 or sample >= total_samples:
+                    continue
+            else:
+                expected_sample = phase_samples + (
+                    beat_index + subdivision / 4.0
+                ) * period_samples
+                if expected_sample >= total_samples:
+                    continue
+                sample = int(clamp(round(expected_sample), 0, total_samples - 1))
             grid_samples.append(sample)
             strength, energy = precision_window_values(
                 precision,
@@ -2620,11 +2621,21 @@ def generate_all(project):
         )
     manifest = json.loads((music / "bpm_manifest.json").read_text(encoding="utf-8"))
     songs = manifest.get("songs", [])
-    if len(songs) != len(OUTPUT_NAMES):
-        raise ValueError(f"Expected {len(OUTPUT_NAMES)} songs, found {len(songs)}")
+    if not songs:
+        raise ValueError("Music manifest contains no songs")
     output.mkdir(parents=True, exist_ok=True)
 
-    for entry, output_name in zip(songs, OUTPUT_NAMES):
+    output_names = set()
+    for index, entry in enumerate(songs):
+        output_name = str(entry.get("chartKey", "")).strip()
+        if not output_name and index < len(OUTPUT_NAMES):
+            output_name = OUTPUT_NAMES[index]
+        if not output_name:
+            output_name = f"song_{index + 1:03d}"
+        if output_name in output_names:
+            raise ValueError(f"Duplicate chartKey: {output_name}")
+        output_names.add(output_name)
+
         audio_path = music / f"{entry['name']}.mp3"
         if not audio_path.exists():
             raise FileNotFoundError(audio_path)
@@ -2634,10 +2645,11 @@ def generate_all(project):
         pcm = unity_pcm[pcm_key]
         sample_rate = pcm["sample_rate"]
         audio_sha256 = hashlib.sha256(audio_path.read_bytes()).hexdigest()
+        timing_profile = STRICT_V6_BUILD_TIMING.get(output_name)
         features, beats, grid_samples, charts = generate_onbeat_difficulty_charts(
             pcm["audio"],
             sample_rate,
-            STRICT_V6_BUILD_TIMING[output_name],
+            timing_profile,
         )
         if len(beats) < PHRASE_BEATS or not grid_samples:
             raise ValueError(f"Strict beat grid is too short for {output_name}")
@@ -2646,7 +2658,11 @@ def generate_all(project):
             "version": 1,
             "generator": "unity_pcm_nonoverlap_speed_v5",
             "pcmSource": "Unity AudioClip.GetData",
-            "timingSource": "Unity PCM calibrated constant musical beat grid",
+            "timingSource": (
+                "Unity PCM calibrated constant musical beat grid"
+                if timing_profile is not None
+                else "Unity PCM automatically detected constant musical beat grid"
+            ),
             "noteTimingPolicy": "strict main-beat and half-beat grid; no quarter-beat notes",
             "difficultyPolicy": "EASY 75% main beats; NORMAL sparse half-beat accents; HARD denser irregular half-beat patterns",
             "colorPatternPolicy": "audio-seeded per-bar pattern bank with rotated, reversed, and inverted variants",
@@ -2688,6 +2704,9 @@ def generate_all(project):
             "charts": charts,
         }
         validate_chart(document)
+        entry["chartKey"] = output_name
+        entry["bpm"] = round(features["bpm"], 6)
+        entry["firstBeat"] = round(beats[0] / sample_rate, 6)
         target = output / f"{output_name}.json"
         target.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(
@@ -2695,6 +2714,11 @@ def generate_all(project):
             f"quantized={features['bpm']:.3f} BPM, "
             f"beats={len(beats)}, grid={len(grid_samples)}, E/N/H={counts}"
         )
+
+    (music / "bpm_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def main():

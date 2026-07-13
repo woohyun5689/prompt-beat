@@ -77,6 +77,7 @@ public static class UnityNoteChartPcmExporter
                     samples = clip.samples,
                     channels = clip.channels
                 });
+                clip.UnloadAudioData();
             }
         }
         finally
