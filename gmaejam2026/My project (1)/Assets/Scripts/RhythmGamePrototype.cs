@@ -181,6 +181,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public float PeakTimeInfluence;
         public float PatternSlotsPerBar;
         public bool PatternAllowsHalfBeats;
+        public float PerfectWindow;
+        public float GreatWindow;
+        public float TapHitWindow;
+        public float WheelHitWindow;
+        public float TapMissInputWindow;
+        public float WheelMissInputWindow;
+        public float AutoMissWindow;
     }
 
     private sealed class ColorRecoveryTarget
@@ -232,11 +239,6 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const float EasyNoteSpeed = 5.10f;
     private const float NoteSpeed = 5.66f;
     private const float HardNoteSpeed = 7.9375f;
-    private const float HitWindow = 0.34f;
-    private const float WheelHitWindow = 0.40f;
-    private const float TapMissInputWindow = 0.58f;
-    private const float WheelMissInputWindow = 0.68f;
-    private const float MissWindow = 0.42f;
     private const float HealthStart = 0.45f;
     private const float HealthMissDrain = 0.085f;
     private const float HealthPerfectGain = 0.022f;
@@ -334,7 +336,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         PeakSearchRadius = 0.06f,
         PeakTimeInfluence = 0.35f,
         PatternSlotsPerBar = 2f,
-        PatternAllowsHalfBeats = false
+        PatternAllowsHalfBeats = false,
+        PerfectWindow = 0.080f,
+        GreatWindow = 0.160f,
+        TapHitWindow = 0.250f,
+        WheelHitWindow = 0.300f,
+        TapMissInputWindow = 0.310f,
+        WheelMissInputWindow = 0.360f,
+        AutoMissWindow = 0.340f
     };
     private static readonly DifficultyPreset NormalDifficulty = new DifficultyPreset
     {
@@ -363,7 +372,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         PeakSearchRadius = 0.06f,
         PeakTimeInfluence = 0.35f,
         PatternSlotsPerBar = 3.2f,
-        PatternAllowsHalfBeats = false
+        PatternAllowsHalfBeats = false,
+        PerfectWindow = 0.070f,
+        GreatWindow = 0.130f,
+        TapHitWindow = 0.200f,
+        WheelHitWindow = 0.250f,
+        TapMissInputWindow = 0.270f,
+        WheelMissInputWindow = 0.330f,
+        AutoMissWindow = 0.300f
     };
     private static readonly DifficultyPreset HardDifficulty = new DifficultyPreset
     {
@@ -392,7 +408,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         PeakSearchRadius = 0.055f,
         PeakTimeInfluence = 0.35f,
         PatternSlotsPerBar = 5f,
-        PatternAllowsHalfBeats = true
+        PatternAllowsHalfBeats = true,
+        PerfectWindow = 0.055f,
+        GreatWindow = 0.100f,
+        TapHitWindow = 0.150f,
+        WheelHitWindow = 0.200f,
+        TapMissInputWindow = 0.230f,
+        WheelMissInputWindow = 0.280f,
+        AutoMissWindow = 0.250f
     };
 
     private static readonly int[][] RhythmPatterns2 =
@@ -3524,14 +3547,18 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         return IsWheelNote(inputKind) == IsWheelNote(noteKind);
     }
 
-    private static float GetHitWindow(NoteKind kind)
+    private float GetHitWindow(NoteKind kind)
     {
-        return IsWheelNote(kind) ? WheelHitWindow : HitWindow;
+        DifficultyPreset difficulty = GetDifficultyPreset();
+        return IsWheelNote(kind) ? difficulty.WheelHitWindow : difficulty.TapHitWindow;
     }
 
-    private static float GetMissInputWindow(NoteKind kind)
+    private float GetMissInputWindow(NoteKind kind)
     {
-        return IsWheelNote(kind) ? WheelMissInputWindow : TapMissInputWindow;
+        DifficultyPreset difficulty = GetDifficultyPreset();
+        return IsWheelNote(kind)
+            ? difficulty.WheelMissInputWindow
+            : difficulty.TapMissInputWindow;
     }
 
     private static bool IsWheelNote(NoteKind kind)
@@ -3542,15 +3569,16 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void ApplyHit(Note note)
     {
         float delta = (float)Math.Abs(GetJudgeDspTime() - note.HitDspTime);
+        DifficultyPreset difficulty = GetDifficultyPreset();
         JudgementKind judgement;
         int points;
 
-        if (delta <= 0.075f)
+        if (delta <= difficulty.PerfectWindow)
         {
             judgement = JudgementKind.Perfect;
             points = 1000;
         }
-        else if (delta <= 0.17f)
+        else if (delta <= difficulty.GreatWindow)
         {
             judgement = JudgementKind.Great;
             points = 650;
@@ -3729,6 +3757,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         bool allJudged = true;
         double now = GetJudgeDspTime();
+        float autoMissWindow = GetDifficultyPreset().AutoMissWindow;
         float noteSpeed = selectedDifficulty == RhythmDifficulty.Easy
             ? EasyNoteSpeed
             : selectedDifficulty == RhythmDifficulty.Hard
@@ -3765,7 +3794,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             }
 
-            if (now - note.HitDspTime > MissWindow)
+            if (now - note.HitDspTime > autoMissWindow)
             {
                 ApplyMiss(note);
             }
@@ -3957,6 +3986,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         Note target = null;
         float bestDistance = AutoFollowLookAhead;
         double now = GetJudgeDspTime();
+        float autoMissWindow = GetDifficultyPreset().AutoMissWindow;
 
         for (int i = 0; i < notes.Count; i++)
         {
@@ -3967,7 +3997,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
 
             float timeUntilHit = (float)(note.HitDspTime - now);
-            if (timeUntilHit < -MissWindow || timeUntilHit > AutoFollowLookAhead)
+            if (timeUntilHit < -autoMissWindow || timeUntilHit > AutoFollowLookAhead)
             {
                 continue;
             }

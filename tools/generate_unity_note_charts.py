@@ -90,33 +90,53 @@ STRICT_V6_BUILD_TIMING = {
 ONBEAT_DIFFICULTY_SETTINGS = {
     "EASY": {
         "density": 0.75,
-        "color_run_length": 4,
+        "color_max_run_length": 4,
         "wheel_window_seconds": 24.0,
         "wheel_min_gap_seconds": 18.0,
         "wheel_minimum_strength": 0.30,
     },
     "NORMAL": {
         "density": 1.00,
-        "color_run_length": 2,
+        "color_max_run_length": 3,
         "wheel_window_seconds": 15.0,
         "wheel_min_gap_seconds": 11.0,
         "wheel_minimum_strength": 0.16,
     },
     "HARD": {
         "density": 1.00,
-        "color_run_length": 1,
+        "color_max_run_length": 2,
         "wheel_window_seconds": 9.0,
         "wheel_min_gap_seconds": 7.0,
         "wheel_minimum_strength": 0.08,
     },
 }
 
-TAIKO_HARD_COLOR_PATTERNS = (
-    (True, False, True, True, False, True, False, False, True, False),
-    (False, True, False, False, True, False, True, True, False, True),
-    (True, True, False, True, False, False, True, False, True, False),
-    (False, False, True, False, True, True, False, True, False, True),
-)
+ONBEAT_COLOR_PATTERN_SEEDS = {
+    "EASY": (
+        (True, True, True, False, False, False, True, True),
+        (True, True, False, False, True, True, False, False),
+        (True, True, True, False, False, True, False, False),
+        (True, True, False, True, True, False, False, False),
+    ),
+    "NORMAL": (
+        (True, True, False, True, False, False, True, False),
+        (True, False, False, True, True, False, True, False),
+        (True, True, False, False, True, False, True, False),
+        (True, False, True, True, False, True, False, False),
+        (True, True, False, True, True, False, False, True),
+        (True, False, True, False, False, True, True, False),
+    ),
+    "HARD": (
+        (True, False, True, True, False, True, False, False, True, False),
+        (False, True, False, False, True, False, True, True, False, True),
+        (True, True, False, True, False, False, True, False, True, False),
+        (False, False, True, False, True, True, False, True, False, True),
+        (True, False, True, False, False, True, False, True, True, False),
+        (True, True, False, True, False, True, False, False, True, False),
+        (True, False, False, True, False, True, True, False, True, False),
+        (True, False, True, True, False, False, True, False, True, False),
+    ),
+}
 
 HARD_MINIMUM_NOTE_GAP_SECONDS = 0.20
 
@@ -200,6 +220,33 @@ def stable_seed(value):
     for char in value:
         result = ((result * 31 + ord(char)) + 2**31) % 2**32 - 2**31
     return 2**31 - 1 if result == -(2**31) else abs(result)
+
+
+def expand_color_pattern_seeds(seeds):
+    variants = []
+    seen = set()
+    for seed in seeds:
+        for oriented in (tuple(seed), tuple(reversed(seed))):
+            for inverted in (False, True):
+                transformed = tuple(
+                    not value if inverted else value
+                    for value in oriented
+                )
+                for rotation in range(len(transformed)):
+                    variant = (
+                        transformed[rotation:]
+                        + transformed[:rotation]
+                    )
+                    if variant not in seen:
+                        seen.add(variant)
+                        variants.append(variant)
+    return tuple(variants)
+
+
+ONBEAT_COLOR_PATTERN_BANKS = {
+    difficulty: expand_color_pattern_seeds(seeds)
+    for difficulty, seeds in ONBEAT_COLOR_PATTERN_SEEDS.items()
+}
 
 
 def normalize_envelope(values, percentile):
@@ -1886,6 +1933,80 @@ def build_onbeat_candidates(
     return candidates, beat_samples, sorted(set(grid_samples))
 
 
+def apply_onbeat_color_patterns(chart, candidates):
+    difficulty = chart["difficulty"]
+    pattern_bank = ONBEAT_COLOR_PATTERN_BANKS[difficulty]
+    maximum_run = ONBEAT_DIFFICULTY_SETTINGS[difficulty][
+        "color_max_run_length"
+    ]
+    candidate_by_sample = {
+        candidate["hitSample"]: candidate
+        for candidate in candidates
+    }
+    candidates_by_bar = {}
+    for note in chart["notes"]:
+        candidate = candidate_by_sample[note["hitSample"]]
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        candidates_by_bar.setdefault(bar_index, []).append(candidate)
+
+    bar_patterns = {}
+    previous_pattern_index = -1
+    used_pattern_indices = set()
+    for bar_index in sorted(candidates_by_bar):
+        bar_candidates = candidates_by_bar[bar_index]
+        signature = 0
+        for index, candidate in enumerate(bar_candidates):
+            strength = int(round(candidate["strength"] * 1000.0))
+            energy = int(round(candidate["energy"] * 1000.0))
+            signature += (index + 1) * (
+                strength * 31
+                + energy * 17
+                + (candidate["subdivision"] + 1) * 97
+            )
+        pattern_index = (
+            bar_index * 37
+            + (bar_index // 4) * 53
+            + signature
+        ) % len(pattern_bank)
+        if pattern_index == previous_pattern_index and len(pattern_bank) > 1:
+            pattern_index = (
+                pattern_index + 1 + signature % (len(pattern_bank) - 1)
+            ) % len(pattern_bank)
+        pattern = pattern_bank[pattern_index]
+        phase = (
+            bar_index * 11 + signature // max(1, len(pattern_bank))
+        ) % len(pattern)
+        bar_patterns[bar_index] = (pattern, phase)
+        previous_pattern_index = pattern_index
+        used_pattern_indices.add(pattern_index)
+
+    previous_good = None
+    run_length = 0
+    local_indices = {}
+    for note in chart["notes"]:
+        candidate = candidate_by_sample[note["hitSample"]]
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        local_index = local_indices.get(bar_index, 0)
+        pattern, phase = bar_patterns[bar_index]
+        good = pattern[(local_index + phase) % len(pattern)]
+        if good == previous_good and run_length >= maximum_run:
+            good = not good
+
+        run_length = run_length + 1 if good == previous_good else 1
+        previous_good = good
+        local_indices[bar_index] = local_index + 1
+        is_wheel = "Wheel" in note["kind"]
+        if is_wheel:
+            note["kind"] = "GoodWheelUp" if good else "BadWheelDown"
+        else:
+            note["kind"] = "GoodTap" if good else "BadTap"
+
+    chart["colorRunLength"] = maximum_run
+    chart["colorPattern"] = "audio_seeded_variant_bank"
+    chart["colorPatternVariantCount"] = len(pattern_bank)
+    chart["colorPatternVariantsUsed"] = len(used_pattern_indices)
+
+
 def choose_onbeat_wheel_indices(selected, settings, sample_rate):
     if not selected:
         return set()
@@ -2083,25 +2204,13 @@ def select_onbeat_difficulty_chart(candidates, difficulty, sample_rate):
     quarter_burst_note_count = sum(
         candidate["subdivision"] in (1, 3) for candidate in selected
     )
-    color_run_length = settings["color_run_length"]
     notes = []
-    hard_bar_note_counts = {}
-    for index, candidate in enumerate(selected):
-        if difficulty == "HARD":
-            bar_index = candidate["beatIndex"] // BEATS_PER_BAR
-            local_index = hard_bar_note_counts.get(bar_index, 0)
-            pattern = TAIKO_HARD_COLOR_PATTERNS[
-                bar_index % len(TAIKO_HARD_COLOR_PATTERNS)
-            ]
-            good = pattern[local_index % len(pattern)]
-            hard_bar_note_counts[bar_index] = local_index + 1
-        else:
-            good = (index // color_run_length) % 2 == 0
+    for candidate in selected:
         is_wheel = candidate["hitSample"] in wheel_samples
         if is_wheel:
-            kind = "GoodWheelUp" if good else "BadWheelDown"
+            kind = "GoodWheelUp"
         else:
-            kind = "GoodTap" if good else "BadTap"
+            kind = "GoodTap"
         notes.append({
             "hitSample": int(candidate["hitSample"]),
             "kind": kind,
@@ -2114,8 +2223,9 @@ def select_onbeat_difficulty_chart(candidates, difficulty, sample_rate):
         "targetDensityPercent": int(round(settings["density"] * 100.0)),
         "actualDensityPercent": round(actual_density, 3),
         "activeBeatCount": active_beat_count,
-        "colorRunLength": color_run_length,
-        "colorPattern": "taiko_irregular" if difficulty == "HARD" else "fixed_runs",
+        "colorRunLength": settings["color_max_run_length"],
+        "colorPattern": "audio_seeded_variant_bank",
+        "colorPatternVariantCount": len(ONBEAT_COLOR_PATTERN_BANKS[difficulty]),
         "burstNoteCount": burst_note_count,
         "quarterBurstNoteCount": quarter_burst_note_count,
         "wheelWindowSeconds": settings["wheel_window_seconds"],
@@ -2171,6 +2281,8 @@ def generate_onbeat_difficulty_charts(audio, sample_rate, timing_profile=None):
             for note in lower_chart["notes"]
         )
         lower_chart["quarterBurstNoteCount"] = 0
+    for chart in charts:
+        apply_onbeat_color_patterns(chart, candidates)
     return features, beat_samples, grid_samples, charts
 
 
@@ -2537,6 +2649,7 @@ def generate_all(project):
             "timingSource": "Unity PCM calibrated constant musical beat grid",
             "noteTimingPolicy": "strict main-beat and half-beat grid; no quarter-beat notes",
             "difficultyPolicy": "EASY 75% main beats; NORMAL sparse half-beat accents; HARD denser irregular half-beat patterns",
+            "colorPatternPolicy": "audio-seeded per-bar pattern bank with rotated, reversed, and inverted variants",
             "clusterPolicy": "HARD minimum note gap 0.20 seconds; NORMAL/HARD wheel guards remove adjacent extras",
             "beatGridMode": "constant",
             "beatGridSubdivision": 2,
