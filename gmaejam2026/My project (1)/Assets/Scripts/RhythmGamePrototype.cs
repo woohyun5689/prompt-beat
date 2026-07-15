@@ -79,7 +79,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private sealed class Note
     {
         public NoteKind Kind;
-        public double HitDspTime;
+        public double HitSongTime;
         public float LaneY;
         public GameObject Root;
         public bool Judged;
@@ -104,6 +104,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         public string Name;
         public string FilePath;
+        public string ResourcePath;
         public AudioClip ResourceClip;
         public AudioClip LoadedClip;
     }
@@ -129,8 +130,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         public string songName;
         public int sampleRate;
         public long totalSamples;
+        public long audibleEndSample;
+        public long playableEndSample;
         public float bpm;
         public string beatGridMode;
+        public int beatGridSubdivision;
         public string notePlacementMode;
         public long firstBeatSample;
         public long[] beatSamples;
@@ -288,7 +292,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private const string MusicResourcesPath = "Music";
     private const string SongTimingManifestResourcePath = "Music/bpm_manifest";
     private const string JsonNoteChartResourcesPath = "NoteCharts";
-    private const float JsonNoteChartPollIntervalSeconds = 10f;
+    private const int MaxAlbumArtCacheEntries = 8;
+    private const int MaxSongAnalysisCacheEntries = 8;
+    private const double ResumeScheduleLeadSeconds = 0.08;
     private const int SingleChartLaneIndex = 1;
     private const string UiClickSoundResourcePath = "TitleScreen/Audio/UI_WC_Score";
     private const string PromptLaneMessage =
@@ -472,6 +478,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static Texture2D uiSongGenButton;
     private static Texture2D uiSongExpPanel;
     private static readonly Dictionary<string, Texture2D> SongAlbumArtCache = new Dictionary<string, Texture2D>();
+    private static readonly LinkedList<string> SongAlbumArtLru = new LinkedList<string>();
     private static AudioClip uiClickSoundClip;
     private static Texture2D uiPauseStop;
     private static Texture2D uiPauseTitle;
@@ -494,13 +501,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private readonly List<NoteSpec> chart = new List<NoteSpec>();
     private readonly List<ColorRecoveryTarget> colorRecoveryTargets = new List<ColorRecoveryTarget>();
     private readonly List<ParallaxLayer> parallaxLayers = new List<ParallaxLayer>();
+    private readonly List<string> resourceSongNames = new List<string>();
     private readonly Dictionary<string, SongAnalysis> songAnalysisCache = new Dictionary<string, SongAnalysis>();
+    private readonly LinkedList<string> songAnalysisLru = new LinkedList<string>();
     private readonly Dictionary<string, SongTimingOverride> songTimingOverrides = new Dictionary<string, SongTimingOverride>();
     private readonly Dictionary<string, JsonSongNoteChart> jsonNoteCharts = new Dictionary<string, JsonSongNoteChart>();
-    private float nextJsonNoteChartPollTime;
-    private int jsonNoteChartContentHash;
     private readonly HashSet<NoteKind> tutorialKindsShown = new HashSet<NoteKind>();
     private Coroutine previewSongAnalysisRoutine;
+    private AudioClip previewSongAnalysisClip;
     private string previewSongAnalysisKey;
     private string previewSongAudioKey;
     private float previewSongLoopStartTime;
@@ -523,6 +531,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private float wheelInputAccumulator;
     private float lastWheelSignalTime = -999f;
     private bool wheelGestureConsumed;
+    private InputAction goodTapAction;
+    private InputAction badTapAction;
+    private InputAction wheelAction;
     private AudioSource musicSource;
     private AudioSource songPreviewSource;
     private AudioSource hitSoundSource;
@@ -542,7 +553,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private readonly List<LocalSongEntry> localSongs = new List<LocalSongEntry>();
     private Vector2 localSongScroll;
     private double songStartDspTime;
-    private double audioVisualLatency;
+    private const double AudioVisualLatency = 0d;
     private float chartDuration;
     private float generatedBpm = 128f;
     private float generatedChartBeatDuration = 60f / 128f;
@@ -566,6 +577,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private bool resultScreenVisible;
     private double pauseStartedDspTime;
     private float pausedSongElapsed;
+    private int pausedSongSample;
+    private bool isResumePending;
+    private double resumeScheduledDspTime;
     private bool worldHiddenForSongSelect;
     private float songSelectBackdropDrop;
     private float songCarouselOffset;
@@ -681,9 +695,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         SetupCharacter();
         LoadHitFxAssets();
         SetupAudio();
+        SetupTimedInputActions();
         LoadSongTimingManifest();
         LoadJsonNoteCharts();
-        nextJsonNoteChartPollTime = Time.unscaledTime + JsonNoteChartPollIntervalSeconds;
         LoadLocalSongs();
     }
 
@@ -697,7 +711,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void Update()
     {
-        PollJsonNoteCharts();
+        CompleteScheduledResumeIfReady();
         ReadInput();
         UpdateSongSelectWorldVisibility();
         if (!resultScreenVisible && resultCharacterRoot != null)
@@ -723,13 +737,37 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         UpdateHeartAndWorldColor();
     }
 
-    private double GetJudgeDspTime()
+    private double GetJudgeSongTime()
     {
-        // The judge/visual clock runs a hair behind the raw dsp clock so notes
-        // reach the ring when the beat is actually heard, not when it enters
-        // the audio pipeline. Positive offset = notes arrive later (use when
-        // the music sounds late compared to the visuals).
-        return AudioSettings.dspTime - manualLatencyOffsetMs * 0.001;
+        double songTime = AudioSettings.dspTime - songStartDspTime;
+        // Once playback starts, the decoded PCM cursor owns the chart clock.
+        if (TryGetPlaybackSampleTime(out double playbackSeconds))
+        {
+            songTime = playbackSeconds;
+        }
+
+        return songTime - manualLatencyOffsetMs * 0.001;
+    }
+
+    private bool TryGetPlaybackSampleTime(out double playbackSeconds)
+    {
+        playbackSeconds = 0d;
+        if (musicSource == null
+            || currentSongClip == null
+            || musicSource.clip != currentSongClip
+            || !musicSource.isPlaying
+            || AudioSettings.dspTime < songStartDspTime)
+        {
+            return false;
+        }
+
+        int sampleRate = Mathf.Max(1, currentSongClip.frequency);
+        int playbackSample = Mathf.Clamp(
+            musicSource.timeSamples,
+            0,
+            Mathf.Max(0, currentSongClip.samples - 1));
+        playbackSeconds = playbackSample / (double)sampleRate;
+        return true;
     }
 
     private void AdjustLatencyOffset(float deltaMs)
@@ -739,6 +777,17 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         PlayerPrefs.Save();
         murekaStatus = "Latency offset: " + manualLatencyOffsetMs.ToString("0") +
             " ms (F10 earlier / F11 later). Sound feels late? Press F11.";
+    }
+
+    private void ToggleAutoPlay()
+    {
+        autoPlayEnabled = !autoPlayEnabled;
+        wheelInputAccumulator = 0f;
+        wheelGestureConsumed = false;
+        murekaStatus = autoPlayEnabled
+            ? "Auto Play ON (F1) - every note is judged PERFECT."
+            : "Auto Play OFF (F1).";
+        Debug.Log("[Auto Play] " + (autoPlayEnabled ? "ON" : "OFF"));
     }
 
     private void ToggleMetronome()
@@ -796,7 +845,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void OnDestroy()
     {
         StopSongPreview();
+        DisposeTimedInputActions();
         ReleaseResultCharacter();
+
+        AudioClip previousSongClip = currentSongClip;
+        currentSongClip = null;
+        ReleaseAudioData(previousSongClip, null);
 
         if (generatedSongClip != null)
         {
@@ -816,14 +870,21 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             longScratchSoundClip = null;
         }
 
+        if (metronomeTickClip != null)
+        {
+            Destroy(metronomeTickClip);
+            metronomeTickClip = null;
+        }
+
         for (int i = 0; i < localSongs.Count; i++)
         {
-            if (localSongs[i].LoadedClip != null)
-            {
-                Destroy(localSongs[i].LoadedClip);
-                localSongs[i].LoadedClip = null;
-            }
+            ReleaseAudioData(localSongs[i].ResourceClip, null);
+            ReleaseAudioData(localSongs[i].LoadedClip, null);
         }
+
+        songAnalysisCache.Clear();
+        songAnalysisLru.Clear();
+        ClearSongAlbumArtCache();
     }
 
     private void OnGUI()
@@ -884,6 +945,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         DrawGameplayHud(scale, gameplayIntroTime);
+        DrawAutoPlayIndicator(scale);
         if (!isGamePaused)
         {
             DrawPauseButton(scale, IntroProgress(gameplayIntroTime, 0.38f, 0.42f));
@@ -1044,7 +1106,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 DrawAlbumArtFrame(R(386f, 634f, 132f, 132f), selectedAlbumArt, 1f, 1f);
             }
 
-            GUI.Label(R(548f, 620f, 500f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
+            DrawFittedLabel(R(548f, 620f, 500f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
             GUI.Label(R(552f, 680f, 510f, 88f), infoDescription, promptTextStyle);
             DrawEqualizer(R(986f, 620f, 288f, 58f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
             // The dark pill baked into the panel art hosts the BPM readout;
@@ -1061,7 +1123,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             DrawNeonPanel(infoRect, new Color(0.015f, 0.035f, 0.14f, 0.96f), new Color(0.72f, 0.9f, 1f, 0.9f), fit);
             DrawCircleIcon(R(398f, 642f, 112f, 112f), new Color(0.68f, 0.45f, 1f, 1f), fit);
-            GUI.Label(R(538f, 618f, 380f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
+            DrawFittedLabel(R(538f, 618f, 380f, 48f), hasSongs ? selectedSongName : "노래 없음", infoTitleStyle);
             DrawRect(R(538f, 680f, 730f, 3f), new Color(0.48f, 0.24f, 1f, 0.56f));
             GUI.Label(R(540f, 692f, 535f, 82f), infoDescription, promptTextStyle);
             DrawEqualizer(R(992f, 636f, 270f, 42f), fit, previewAnalysis, GetPreviewWaveformCenterTime(previewAnalysis));
@@ -1121,6 +1183,23 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         };
         style.normal.textColor = color;
         return style;
+    }
+
+    private static void DrawFittedLabel(Rect rect, string text, GUIStyle style)
+    {
+        GUIContent content = new GUIContent(text ?? string.Empty);
+        float renderedWidth = style.CalcSize(content).x;
+        if (renderedWidth <= rect.width || renderedWidth <= 0f)
+        {
+            GUI.Label(rect, content, style);
+            return;
+        }
+
+        GUIStyle fittedStyle = new GUIStyle(style)
+        {
+            fontSize = Mathf.Max(12, Mathf.FloorToInt(style.fontSize * rect.width / renderedWidth))
+        };
+        GUI.Label(rect, content, fittedStyle);
     }
 
     private static void PlayUiClickSound()
@@ -1567,6 +1646,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             rect.width * 0.82f,
             rect.height * 0.18f);
         float textScale = Mathf.Lerp(21f / 44f, 1f, selection);
+        float renderedTitleWidth = style.CalcSize(new GUIContent(songName)).x * textScale;
+        if (renderedTitleWidth > labelRect.width)
+        {
+            textScale *= labelRect.width / renderedTitleWidth;
+        }
         Rect textRect = new Rect(
             labelRect.center.x - labelRect.width / textScale * 0.5f,
             labelRect.center.y - labelRect.height / textScale * 0.5f,
@@ -1857,45 +1941,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return "NO SONG";
         }
 
-        string title = songName.Trim();
-        string[] separators =
-        {
-            " _",
-            "_ ",
-            " (",
-            " [",
-            " - ",
-            " | "
-        };
-
-        for (int i = 0; i < separators.Length; i++)
-        {
-            int index = title.IndexOf(separators[i], StringComparison.Ordinal);
-            if (index > 0)
-            {
-                title = title.Substring(0, index).Trim();
-                break;
-            }
-        }
-
-        int firstTitleChar = 0;
-        while (firstTitleChar < title.Length && !char.IsLetterOrDigit(title[firstTitleChar]))
-        {
-            firstTitleChar++;
-        }
-
-        if (firstTitleChar > 0 && firstTitleChar < title.Length)
-        {
-            title = title.Substring(firstTitleChar).Trim();
-        }
-
-        const int maxTitleLength = 18;
-        if (title.Length > maxTitleLength)
-        {
-            title = title.Substring(0, maxTitleLength - 3).TrimEnd() + "...";
-        }
-
-        return string.IsNullOrWhiteSpace(title) ? songName.Trim() : title;
+        return songName.Trim();
     }
 
     private static Texture2D GetSongAlbumArt(string songName)
@@ -1946,13 +1992,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             resourceName = "lets_party";
         }
+        else if (key.Contains("프롬프트 비트 메인곡") || key.Contains("prompt beat main"))
+        {
+            resourceName = "prompt_beat_main";
+        }
         else if (key.Contains("프롬프트 비트") || key.Contains("prompt beat"))
         {
             resourceName = "prompt_beat";
-        }
-        else if (key.Contains("프롬프트 비트 메인곡"))
-        {
-            resourceName = "prompt_beat_main";
         }
 
         if (string.IsNullOrEmpty(resourceName))
@@ -1967,16 +2013,78 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         if (SongAlbumArtCache.TryGetValue(resourceName, out Texture2D cached) && cached != null)
         {
+            TouchSongAlbumArt(resourceName);
             return cached;
         }
 
         Texture2D albumArt = Resources.Load<Texture2D>("UI/AlbumArt/" + resourceName);
         if (albumArt != null)
         {
-            SongAlbumArtCache[resourceName] = albumArt;
+            CacheSongAlbumArt(resourceName, albumArt);
         }
 
         return albumArt;
+    }
+
+    private static void TouchSongAlbumArt(string resourceName)
+    {
+        SongAlbumArtLru.Remove(resourceName);
+        SongAlbumArtLru.AddLast(resourceName);
+    }
+
+    private static void CacheSongAlbumArt(string resourceName, Texture2D albumArt)
+    {
+        SongAlbumArtCache[resourceName] = albumArt;
+        TouchSongAlbumArt(resourceName);
+        while (SongAlbumArtLru.Count > MaxAlbumArtCacheEntries)
+        {
+            string oldest = SongAlbumArtLru.First.Value;
+            SongAlbumArtLru.RemoveFirst();
+            if (SongAlbumArtCache.TryGetValue(oldest, out Texture2D texture))
+            {
+                SongAlbumArtCache.Remove(oldest);
+                if (texture != null)
+                {
+                    Resources.UnloadAsset(texture);
+                }
+            }
+        }
+    }
+
+    private void DrawAutoPlayIndicator(float scale)
+    {
+        if (!autoPlayEnabled)
+        {
+            return;
+        }
+
+        Rect rect = new Rect(
+            Screen.width - 176f * scale,
+            24f * scale,
+            94f * scale,
+            30f * scale);
+        DrawRect(rect, new Color(0.16f, 0.035f, 0.28f, 0.94f));
+        DrawRect(
+            new Rect(rect.x + 2f * scale, rect.y + 2f * scale, rect.width - 4f * scale, rect.height - 4f * scale),
+            new Color(0.08f, 0.82f, 0.95f, 0.88f));
+        GUI.Label(
+            rect,
+            "AUTO",
+            CreateSongSelectStyle(14f, scale, TextAnchor.MiddleCenter, FontStyle.Bold, WhiteColor));
+    }
+
+    private static void ClearSongAlbumArtCache()
+    {
+        foreach (Texture2D texture in SongAlbumArtCache.Values)
+        {
+            if (texture != null)
+            {
+                Resources.UnloadAsset(texture);
+            }
+        }
+
+        SongAlbumArtCache.Clear();
+        SongAlbumArtLru.Clear();
     }
 
     private static string GetSongMoodDescription(string songName, SongAnalysis analysis)
@@ -2073,7 +2181,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return null;
         }
 
-        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        AudioClip clip = GetExistingSongClip(song);
         string requestKey = GetPreviewSongRequestKey(song, clip);
         if (string.IsNullOrEmpty(requestKey))
         {
@@ -2088,7 +2196,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 return currentSongAnalysis;
             }
 
-            if (songAnalysisCache.TryGetValue(analysisKey, out SongAnalysis cachedAnalysis))
+            if (TryGetCachedSongAnalysis(analysisKey, out SongAnalysis cachedAnalysis))
             {
                 return cachedAnalysis;
             }
@@ -2101,8 +2209,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         if (previewSongAnalysisRoutine != null)
         {
-            StopCoroutine(previewSongAnalysisRoutine);
-            previewSongAnalysisRoutine = null;
+            CancelPreviewSongAnalysis();
         }
 
         previewSongAnalysisKey = requestKey;
@@ -2122,7 +2229,36 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return "file|" + song.FilePath;
         }
 
+        if (!string.IsNullOrWhiteSpace(song.ResourcePath))
+        {
+            return "resource|" + song.ResourcePath;
+        }
+
         return clip != null ? "clip|" + GetAnalysisCacheKey(clip) : null;
+    }
+
+    private static AudioClip GetExistingSongClip(LocalSongEntry song)
+    {
+        return song == null
+            ? null
+            : song.ResourceClip != null
+                ? song.ResourceClip
+                : song.LoadedClip;
+    }
+
+    private static AudioClip GetOrLoadSongClip(LocalSongEntry song)
+    {
+        if (song == null)
+        {
+            return null;
+        }
+
+        if (song.ResourceClip == null && !string.IsNullOrWhiteSpace(song.ResourcePath))
+        {
+            song.ResourceClip = Resources.Load<AudioClip>(song.ResourcePath);
+        }
+
+        return GetExistingSongClip(song);
     }
 
     private IEnumerator AnalyzeSelectedSongPreviewRoutine(LocalSongEntry song, string requestKey)
@@ -2133,7 +2269,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             yield break;
         }
 
-        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        AudioClip clip = GetOrLoadSongClip(song);
         if (clip == null)
         {
             if (string.IsNullOrWhiteSpace(song.FilePath) || !File.Exists(song.FilePath))
@@ -2164,6 +2300,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
         }
 
+        previewSongAnalysisClip = clip;
+
         if (clip.loadState != AudioDataLoadState.Loaded)
         {
             clip.LoadAudioData();
@@ -2180,14 +2318,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         string analysisKey = GetAnalysisCacheKey(clip);
-        if (!songAnalysisCache.ContainsKey(analysisKey))
+        if (!TryGetCachedSongAnalysis(analysisKey, out _))
         {
             SongAnalysis analysis = null;
             yield return AnalyzeSongRoutine(clip, value => analysis = value);
             if (analysis != null)
             {
                 ApplySongTimingOverride(song.Name, analysis, clip.length);
-                songAnalysisCache[analysisKey] = analysis;
+                CacheSongAnalysis(analysisKey, analysis);
             }
         }
 
@@ -2230,7 +2368,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        AudioClip clip = GetExistingSongClip(song);
         string requestKey = GetPreviewSongRequestKey(song, clip);
         if (string.IsNullOrEmpty(requestKey))
         {
@@ -2244,7 +2382,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         SongAnalysis analysis = GetSelectedSongPreviewAnalysis();
-        clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        clip = GetExistingSongClip(song);
         if (clip == null || clip.loadState != AudioDataLoadState.Loaded || !IsAnalysisUsable(analysis))
         {
             return;
@@ -2273,7 +2411,8 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        StopSongPreview();
+        StopSongPreview(clip);
+        previewSongAnalysisClip = null;
         songPreviewSource.clip = clip;
         songPreviewSource.loop = true;
         songPreviewSource.volume = SongPreviewVolume;
@@ -2291,17 +2430,76 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         previewSongAudioKey = requestKey;
     }
 
-    private void StopSongPreview()
+    private void StopSongPreview(AudioClip preserveClip = null)
     {
+        CancelPreviewSongAnalysis(preserveClip);
+        AudioClip previewClip = songPreviewSource != null ? songPreviewSource.clip : null;
         previewSongAudioKey = null;
         previewSongLoopStartTime = 0f;
-        if (songPreviewSource == null)
+        if (songPreviewSource != null)
+        {
+            songPreviewSource.Stop();
+            songPreviewSource.clip = null;
+        }
+
+        ReleaseAudioData(previewClip, preserveClip);
+    }
+
+    private void CancelPreviewSongAnalysis(AudioClip preserveClip = null)
+    {
+        if (previewSongAnalysisRoutine != null)
+        {
+            StopCoroutine(previewSongAnalysisRoutine);
+        }
+
+        AudioClip analysisClip = previewSongAnalysisClip;
+        previewSongAnalysisRoutine = null;
+        previewSongAnalysisKey = null;
+        previewSongAnalysisClip = null;
+        ReleaseAudioData(analysisClip, preserveClip);
+    }
+
+    private void ReleaseAudioData(AudioClip clip, AudioClip preserveClip)
+    {
+        if (clip == null
+            || clip == preserveClip
+            || clip == currentSongClip
+            || clip == generatedSongClip)
         {
             return;
         }
 
-        songPreviewSource.Stop();
-        songPreviewSource.clip = null;
+        LocalSongEntry resourceOwner = null;
+        LocalSongEntry loadedOwner = null;
+        for (int i = 0; i < localSongs.Count; i++)
+        {
+            if (localSongs[i].ResourceClip == clip)
+            {
+                resourceOwner = localSongs[i];
+                break;
+            }
+
+            if (localSongs[i].LoadedClip == clip)
+            {
+                loadedOwner = localSongs[i];
+            }
+        }
+
+        if (clip.loadState == AudioDataLoadState.Loaded)
+        {
+            clip.UnloadAudioData();
+        }
+
+        if (resourceOwner != null)
+        {
+            resourceOwner.ResourceClip = null;
+            Resources.UnloadAsset(clip);
+        }
+        else if (loadedOwner != null)
+        {
+            loadedOwner.LoadedClip = null;
+            Destroy(clip);
+        }
     }
 
     private static float GetSongPreviewStartTime(AudioClip clip, SongAnalysis analysis)
@@ -3055,6 +3253,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return Mathf.Max(0f, pausedSongElapsed);
         }
 
+        if (TryGetPlaybackSampleTime(out double playbackSeconds))
+        {
+            return Mathf.Max(0f, (float)playbackSeconds);
+        }
+
         return Mathf.Max(0f, (float)(AudioSettings.dspTime - songStartDspTime));
     }
 
@@ -3068,8 +3271,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         isGamePaused = true;
         pauseStartedDspTime = AudioSettings.dspTime;
         pausedSongElapsed = Mathf.Max(0f, (float)(pauseStartedDspTime - songStartDspTime));
+        pausedSongSample = 0;
         if (musicSource != null)
         {
+            pausedSongSample = Mathf.Clamp(
+                musicSource.timeSamples,
+                0,
+                Mathf.Max(0, currentSongClip.samples - 1));
+            pausedSongElapsed = pausedSongSample / (float)Mathf.Max(1, currentSongClip.frequency);
             musicSource.Stop();
         }
 
@@ -3088,55 +3297,56 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void ResumeGame()
     {
-        if (!isGamePaused)
+        if (!isGamePaused
+            || isResumePending
+            || musicSource == null
+            || currentSongClip == null)
         {
             return;
         }
 
-        double oldSongStartDspTime = songStartDspTime;
         double now = AudioSettings.dspTime;
-        if (pausedSongElapsed > 0f)
+        double resumeDspTime = now + ResumeScheduleLeadSeconds;
+        double resumedSongTime = pausedSongSample / (double)Mathf.Max(1, currentSongClip.frequency);
+        songStartDspTime = resumeDspTime - resumedSongTime;
+
+        musicSource.Stop();
+        musicSource.clip = currentSongClip;
+        musicSource.pitch = 1f;
+        musicSource.timeSamples = Mathf.Clamp(
+            pausedSongSample,
+            0,
+            Mathf.Max(0, currentSongClip.samples - 1));
+        musicSource.PlayScheduled(resumeDspTime);
+        isResumePending = true;
+        resumeScheduledDspTime = resumeDspTime;
+        murekaStatus = "Resuming " + generatedSongLabel + ".";
+    }
+
+    private void CompleteScheduledResumeIfReady()
+    {
+        if (!isResumePending || AudioSettings.dspTime < resumeScheduledDspTime)
         {
-            songStartDspTime = now - pausedSongElapsed;
-        }
-        else
-        {
-            songStartDspTime += now - pauseStartedDspTime;
+            return;
         }
 
-        double hitTimeShift = songStartDspTime - oldSongStartDspTime;
-        for (int i = 0; i < notes.Count; i++)
-        {
-            notes[i].HitDspTime += hitTimeShift;
-        }
-
+        isResumePending = false;
+        resumeScheduledDspTime = 0d;
         isGamePaused = false;
         pauseStartedDspTime = 0d;
-        if (musicSource != null && currentSongClip != null)
-        {
-            musicSource.Stop();
-            musicSource.clip = currentSongClip;
-            if (pausedSongElapsed > 0f)
-            {
-                musicSource.time = Mathf.Min(pausedSongElapsed, Mathf.Max(0f, currentSongClip.length - 0.05f));
-                musicSource.Play();
-            }
-            else
-            {
-                musicSource.time = 0f;
-                musicSource.PlayScheduled(songStartDspTime);
-            }
-        }
-
         pausedSongElapsed = 0f;
+        pausedSongSample = 0;
         murekaStatus = "Resumed " + generatedSongLabel + ".";
     }
 
     private void ResetPauseState()
     {
         isGamePaused = false;
+        isResumePending = false;
+        resumeScheduledDspTime = 0d;
         pauseStartedDspTime = 0d;
         pausedSongElapsed = 0f;
+        pausedSongSample = 0;
     }
 
     private void ReplayCurrentSongFromPause()
@@ -3349,9 +3559,94 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         GUI.enabled = previousEnabled;
     }
 
+    private void SetupTimedInputActions()
+    {
+        goodTapAction = new InputAction("Good Tap", InputActionType.Button, "<Keyboard>/q");
+        badTapAction = new InputAction("Bad Tap", InputActionType.Button, "<Keyboard>/e");
+        wheelAction = new InputAction("Wheel", InputActionType.Value, "<Mouse>/scroll");
+
+        goodTapAction.performed += OnGoodTapPerformed;
+        badTapAction.performed += OnBadTapPerformed;
+        wheelAction.performed += OnWheelPerformed;
+        goodTapAction.Enable();
+        badTapAction.Enable();
+        wheelAction.Enable();
+    }
+
+    private void DisposeTimedInputActions()
+    {
+        if (goodTapAction != null)
+        {
+            goodTapAction.performed -= OnGoodTapPerformed;
+            goodTapAction.Dispose();
+            goodTapAction = null;
+        }
+
+        if (badTapAction != null)
+        {
+            badTapAction.performed -= OnBadTapPerformed;
+            badTapAction.Dispose();
+            badTapAction = null;
+        }
+
+        if (wheelAction != null)
+        {
+            wheelAction.performed -= OnWheelPerformed;
+            wheelAction.Dispose();
+            wheelAction = null;
+        }
+    }
+
+    private bool CanReceiveRhythmInput()
+    {
+        return !songSelectionVisible
+            && !isGamePaused
+            && !resultScreenVisible
+            && !isLoadingScreenVisible
+            && !isEditingPrompt
+            && !autoPlayEnabled;
+    }
+
+    private double ConvertInputTimeToJudgeSongTime(double inputTime)
+    {
+        double age = UnityEngine.InputSystem.LowLevel.InputState.currentTime - inputTime;
+        return GetJudgeSongTime() - Math.Max(0d, age);
+    }
+
+    private void OnGoodTapPerformed(InputAction.CallbackContext context)
+    {
+        if (CanReceiveRhythmInput())
+        {
+            TryHit(NoteKind.GoodTap, ConvertInputTimeToJudgeSongTime(context.time));
+        }
+    }
+
+    private void OnBadTapPerformed(InputAction.CallbackContext context)
+    {
+        if (CanReceiveRhythmInput())
+        {
+            TryHit(NoteKind.BadTap, ConvertInputTimeToJudgeSongTime(context.time));
+        }
+    }
+
+    private void OnWheelPerformed(InputAction.CallbackContext context)
+    {
+        if (CanReceiveRhythmInput())
+        {
+            ReadWheelInput(
+                context.ReadValue<Vector2>().y,
+                ConvertInputTimeToJudgeSongTime(context.time));
+        }
+    }
+
     private void ReadInput()
     {
         Keyboard keyboard = Keyboard.current;
+        if (keyboard != null && keyboard.f1Key.wasPressedThisFrame)
+        {
+            ToggleAutoPlay();
+        }
+
         if (isEditingPrompt)
         {
             if (isMurekaPromptWindowVisible && keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
@@ -3419,16 +3714,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 return;
             }
 
-            // Autoplay and metronome are dev-audit tools; latency offset
+            // Metronome remains an editor audit tool; latency offset
             // (F10/F11) stays available in builds for player calibration.
             if (Application.isEditor && keyboard.f9Key.wasPressedThisFrame)
             {
                 ToggleMetronome();
-            }
-
-            if (Application.isEditor && keyboard.f8Key.wasPressedThisFrame)
-            {
-                autoPlayEnabled = !autoPlayEnabled;
             }
 
             if (keyboard.f10Key.wasPressedThisFrame)
@@ -3441,27 +3731,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 AdjustLatencyOffset(5f);
             }
 
-            if (keyboard.qKey.wasPressedThisFrame)
-            {
-                TryHit(NoteKind.GoodTap);
-            }
-
-            if (keyboard.eKey.wasPressedThisFrame)
-            {
-                TryHit(NoteKind.BadTap);
-            }
         }
 
-        Mouse mouse = Mouse.current;
-        if (mouse == null)
-        {
-            return;
-        }
-
-        ReadWheelInput(mouse.scroll.ReadValue().y);
+        ReadWheelInput(0f, GetJudgeSongTime());
     }
 
-    private void ReadWheelInput(float scrollY)
+    private void ReadWheelInput(float scrollY, double inputSongTime)
     {
         if (Mathf.Abs(scrollY) <= 0.001f)
         {
@@ -3497,24 +3772,24 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             : NoteKind.BadWheelDown;
         wheelGestureConsumed = true;
         wheelInputAccumulator = 0f;
-        TryHit(wheelKind);
+        TryHit(wheelKind, inputSongTime);
     }
 
-    private void TryHit(NoteKind inputKind)
+    private void TryHit(NoteKind inputKind, double inputSongTime)
     {
         // Judge only the closest pending note in this input family, so a
         // wrong-key press misses the front note instead of consuming a
         // matching note queued right behind it.
-        Note target = FindClosestSameInputFamilyNote(inputKind);
+        Note target = FindClosestSameInputFamilyNote(inputKind, inputSongTime);
         if (target == null)
         {
             return;
         }
 
-        float delta = (float)Math.Abs(GetJudgeDspTime() - target.HitDspTime);
+        float delta = (float)Math.Abs(inputSongTime - target.HitSongTime);
         if (target.Kind == inputKind && delta <= GetHitWindow(inputKind))
         {
-            ApplyHit(target);
+            ApplyHit(target, inputSongTime);
         }
         else
         {
@@ -3522,11 +3797,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
     }
 
-    private Note FindClosestSameInputFamilyNote(NoteKind inputKind)
+    private Note FindClosestSameInputFamilyNote(NoteKind inputKind, double inputSongTime)
     {
         Note best = null;
         float bestDelta = GetMissInputWindow(inputKind);
-        double now = GetJudgeDspTime();
 
         for (int i = 0; i < notes.Count; i++)
         {
@@ -3536,7 +3810,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 continue;
             }
 
-            float delta = (float)Math.Abs(now - note.HitDspTime);
+            float delta = (float)Math.Abs(inputSongTime - note.HitSongTime);
             if (delta <= bestDelta)
             {
                 best = note;
@@ -3573,7 +3847,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
     private void ApplyHit(Note note)
     {
-        float delta = (float)Math.Abs(GetJudgeDspTime() - note.HitDspTime);
+        ApplyHit(note, GetJudgeSongTime());
+    }
+
+    private void ApplyHit(Note note, double inputSongTime)
+    {
+        float delta = (float)Math.Abs(inputSongTime - note.HitSongTime);
         DifficultyPreset difficulty = GetDifficultyPreset();
         JudgementKind judgement;
         int points;
@@ -3761,7 +4040,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         bool allJudged = true;
-        double now = GetJudgeDspTime();
+        double songTime = GetJudgeSongTime();
         float autoMissWindow = GetDifficultyPreset().AutoMissWindow;
         float noteSpeed = selectedDifficulty == RhythmDifficulty.Easy
             ? EasyNoteSpeed
@@ -3778,13 +4057,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
 
             allJudged = false;
-            if (autoPlayEnabled && now >= note.HitDspTime)
+            if (autoPlayEnabled && songTime >= note.HitSongTime)
             {
-                ApplyHit(note);
+                ApplyHit(note, note.HitSongTime);
                 continue;
             }
 
-            float x = HitX + (float)((note.HitDspTime - now) * noteSpeed);
+            float x = HitX + (float)((note.HitSongTime - songTime) * noteSpeed);
 
             if (note.Root != null)
             {
@@ -3799,13 +4078,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
             }
 
-            if (now - note.HitDspTime > autoMissWindow)
+            if (songTime - note.HitSongTime > autoMissWindow)
             {
                 ApplyMiss(note);
             }
         }
 
-        if (allJudged && !chartFinished && now > songStartDspTime + chartDuration + 1.1f)
+        if (allJudged && !chartFinished && songTime > chartDuration + 1.1f)
         {
             chartFinished = true;
             ShowResultScoreScene();
@@ -3848,14 +4127,42 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             && IsAnalysisUsable(analysis)
             && analysis.BeatDuration > 0.01f)
         {
-            float songTime = (float)(GetJudgeDspTime() - songStartDspTime - audioVisualLatency);
-            float beatPhase = Mathf.Repeat(songTime - analysis.BeatOffset, analysis.BeatDuration) / analysis.BeatDuration;
+            float songTime = (float)(GetJudgeSongTime() - AudioVisualLatency);
+            float beatPhase = GetBeatPhase(analysis, songTime);
             hitLineRenderer.enabled = beatPhase < 0.5f;
             return;
         }
 
         float phase = Mathf.Repeat(Time.unscaledTime, 1f);
         hitLineRenderer.enabled = phase < 0.56f;
+    }
+
+    private static float GetBeatPhase(SongAnalysis analysis, float songTime)
+    {
+        if (analysis == null || analysis.BeatTimes.Count == 0)
+        {
+            return 0f;
+        }
+
+        int nextIndex = analysis.BeatTimes.BinarySearch(songTime);
+        if (nextIndex >= 0)
+        {
+            return 0f;
+        }
+
+        nextIndex = ~nextIndex;
+        int previousIndex = Mathf.Clamp(nextIndex - 1, 0, analysis.BeatTimes.Count - 1);
+        float beatStart = analysis.BeatTimes[previousIndex];
+        float beatEnd = previousIndex + 1 < analysis.BeatTimes.Count
+            ? analysis.BeatTimes[previousIndex + 1]
+            : beatStart + analysis.BeatDuration;
+        if (songTime < beatStart)
+        {
+            beatEnd = beatStart;
+            beatStart -= analysis.BeatDuration;
+        }
+
+        return Mathf.InverseLerp(beatStart, Mathf.Max(beatStart + 0.0001f, beatEnd), songTime);
     }
 
     private void UpdatePromptLane()
@@ -3990,7 +4297,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         Note target = null;
         float bestDistance = AutoFollowLookAhead;
-        double now = GetJudgeDspTime();
+        double songTime = GetJudgeSongTime();
         float autoMissWindow = GetDifficultyPreset().AutoMissWindow;
 
         for (int i = 0; i < notes.Count; i++)
@@ -4001,7 +4308,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                 continue;
             }
 
-            float timeUntilHit = (float)(note.HitDspTime - now);
+            float timeUntilHit = (float)(note.HitSongTime - songTime);
             if (timeUntilHit < -autoMissWindow || timeUntilHit > AutoFollowLookAhead)
             {
                 continue;
@@ -4066,7 +4373,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             CreateNote(
                 spec.Kind,
                 spec.LaneIndex,
-                songStartDspTime + spec.PreciseTime + audioVisualLatency,
+                spec.PreciseTime + AudioVisualLatency,
                 showInputGuide);
             if (showInputGuide)
             {
@@ -4079,7 +4386,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         judgementVisibleUntil = 0f;
     }
 
-    private void CreateNote(NoteKind kind, int laneIndex, double hitDspTime, bool showInputGuide)
+    private void CreateNote(NoteKind kind, int laneIndex, double hitSongTime, bool showInputGuide)
     {
         float laneY = GetNoteY(kind, laneIndex);
         GameObject root = new GameObject(kind.ToString());
@@ -4120,7 +4427,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         notes.Add(new Note
         {
             Kind = kind,
-            HitDspTime = hitDspTime,
+            HitSongTime = hitSongTime,
             LaneY = laneY,
             Root = root,
             Judged = false,
@@ -5330,16 +5637,13 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         musicSource.loop = false;
         musicSource.spatialBlend = 0f;
         musicSource.volume = 0.72f;
+        musicSource.pitch = 1f;
 
         songPreviewSource = gameObject.AddComponent<AudioSource>();
         songPreviewSource.playOnAwake = false;
         songPreviewSource.loop = true;
         songPreviewSource.spatialBlend = 0f;
         songPreviewSource.volume = SongPreviewVolume;
-
-        AudioSettings.GetDSPBufferSize(out int bufferLength, out int bufferCount);
-        int outputRate = Mathf.Max(1, AudioSettings.outputSampleRate);
-        audioVisualLatency = bufferLength * Mathf.Max(1, bufferCount - 1) / (double)outputRate;
 
         hitSoundSource = gameObject.AddComponent<AudioSource>();
         hitSoundSource.playOnAwake = false;
@@ -5362,7 +5666,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         metronomeSource.volume = 0.9f;
         metronomeTickClip = CreateMetronomeTickClip();
 
-        manualLatencyOffsetMs = PlayerPrefs.GetFloat("ManualLatencyOffsetMs", 0f);
+        manualLatencyOffsetMs = 0f;
+        if (PlayerPrefs.HasKey("ManualLatencyOffsetMs"))
+        {
+            PlayerPrefs.DeleteKey("ManualLatencyOffsetMs");
+            PlayerPrefs.Save();
+        }
     }
 
     private static AudioClip CreateHitSoundClip()
@@ -5513,13 +5822,25 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     {
         localSongs.Clear();
 
-        AudioClip[] resourceClips = Resources.LoadAll<AudioClip>(MusicResourcesPath);
-        for (int i = 0; i < resourceClips.Length; i++)
+        for (int i = 0; i < resourceSongNames.Count; i++)
         {
-            AudioClip clip = resourceClips[i];
-            if (clip != null)
+            string songName = resourceSongNames[i];
+            AddLocalSong(
+                songName,
+                string.Empty,
+                MusicResourcesPath + "/" + songName,
+                null);
+        }
+
+        foreach (JsonSongNoteChart jsonChart in jsonNoteCharts.Values)
+        {
+            if (jsonChart != null && !string.IsNullOrWhiteSpace(jsonChart.songName))
             {
-                AddLocalSong(clip.name, string.Empty, clip);
+                AddLocalSong(
+                    jsonChart.songName,
+                    string.Empty,
+                    MusicResourcesPath + "/" + jsonChart.songName,
+                    null);
             }
         }
 
@@ -5530,7 +5851,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             for (int i = 0; i < musicFiles.Length; i++)
             {
                 string filePath = musicFiles[i];
-                AddLocalSong(Path.GetFileNameWithoutExtension(filePath), filePath, null);
+                string songName = Path.GetFileNameWithoutExtension(filePath);
+                AddLocalSong(
+                    songName,
+                    filePath,
+                    MusicResourcesPath + "/" + songName,
+                    null);
             }
         }
 
@@ -5552,6 +5878,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private void LoadSongTimingManifest()
     {
         songTimingOverrides.Clear();
+        resourceSongNames.Clear();
 
         TextAsset manifestAsset = Resources.Load<TextAsset>(SongTimingManifestResourcePath);
         if (manifestAsset == null || string.IsNullOrWhiteSpace(manifestAsset.text))
@@ -5570,6 +5897,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             for (int i = 0; i < manifest.songs.Length; i++)
             {
                 SongTimingOverride timing = manifest.songs[i];
+                if (timing != null && !string.IsNullOrWhiteSpace(timing.name))
+                {
+                    resourceSongNames.Add(timing.name.Trim());
+                }
+
                 if (!IsTimingOverrideUsable(timing))
                 {
                     continue;
@@ -5588,49 +5920,33 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             Debug.LogWarning("Could not parse Music/bpm_manifest.json: " + ex.Message);
         }
-    }
-
-    private void PollJsonNoteCharts()
-    {
-        if (!UseJsonNoteCharts || Time.unscaledTime < nextJsonNoteChartPollTime)
+        finally
         {
-            return;
-        }
-
-        nextJsonNoteChartPollTime = Time.unscaledTime + JsonNoteChartPollIntervalSeconds;
-        int previousHash = jsonNoteChartContentHash;
-        LoadJsonNoteCharts(false);
-        if (jsonNoteChartContentHash != previousHash)
-        {
-            Debug.Log("[JSON Chart] Poll detected updated chart content. The next chart start will use it.");
+            Resources.UnloadAsset(manifestAsset);
         }
     }
 
-    private void LoadJsonNoteCharts(bool logResult = true)
+    private void LoadJsonNoteCharts()
     {
         if (!UseJsonNoteCharts)
         {
             jsonNoteCharts.Clear();
-            jsonNoteChartContentHash = 0;
             return;
         }
 
         TextAsset[] chartAssets = Resources.LoadAll<TextAsset>(JsonNoteChartResourcesPath);
         Array.Sort(chartAssets, (first, second) => string.CompareOrdinal(first.name, second.name));
         Dictionary<string, JsonSongNoteChart> loadedCharts = new Dictionary<string, JsonSongNoteChart>();
-        int contentHash = 17;
         for (int i = 0; i < chartAssets.Length; i++)
         {
             TextAsset chartAsset = chartAssets[i];
             if (chartAsset == null || string.IsNullOrWhiteSpace(chartAsset.text))
             {
+                if (chartAsset != null)
+                {
+                    Resources.UnloadAsset(chartAsset);
+                }
                 continue;
-            }
-
-            unchecked
-            {
-                contentHash = contentHash * 31 + chartAsset.name.GetHashCode();
-                contentHash = contentHash * 31 + chartAsset.text.GetHashCode();
             }
 
             try
@@ -5658,6 +5974,10 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             {
                 Debug.LogWarning("Could not parse JSON note chart " + chartAsset.name + ": " + ex.Message);
             }
+            finally
+            {
+                Resources.UnloadAsset(chartAsset);
+            }
         }
 
         jsonNoteCharts.Clear();
@@ -5665,11 +5985,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             jsonNoteCharts[pair.Key] = pair.Value;
         }
-        jsonNoteChartContentHash = contentHash;
-        if (logResult)
-        {
-            Debug.Log("[JSON Chart] Loaded " + jsonNoteCharts.Count + " song chart(s) from Resources/" + JsonNoteChartResourcesPath + ". Poll interval: " + JsonNoteChartPollIntervalSeconds.ToString("0") + " seconds.");
-        }
+        Debug.Log("[JSON Chart] Loaded " + jsonNoteCharts.Count + " song chart(s) once from Resources/" + JsonNoteChartResourcesPath + ".");
     }
 
     private bool TryBuildChartFromJson(string songName, AudioClip clip)
@@ -5705,6 +6021,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         bool usesDirectOnsets = UsesDirectOnsetTiming(jsonChart);
+        HashSet<long> mainBeatSamples = jsonChart.beatSamples != null
+            ? new HashSet<long>(jsonChart.beatSamples)
+            : new HashSet<long>();
         HashSet<long> validGridSamples = usesDirectOnsets
             ? new HashSet<long>()
             : jsonChart.gridSamples != null && jsonChart.gridSamples.Length > 0
@@ -5725,6 +6044,20 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             if (validGridSamples.Count > 0 && !validGridSamples.Contains(jsonNote.hitSample))
             {
                 Debug.LogWarning("[JSON Chart] Off-grid note at sample " + jsonNote.hitSample + " for " + songName + ".");
+                return false;
+            }
+
+            if (jsonChart.playableEndSample > 0
+                && jsonNote.hitSample > jsonChart.playableEndSample)
+            {
+                Debug.LogWarning("[JSON Chart] Note past playable ending at sample " + jsonNote.hitSample + " for " + songName + ".");
+                return false;
+            }
+
+            if (jsonChart.beatGridSubdivision == 1
+                && !mainBeatSamples.Contains(jsonNote.hitSample))
+            {
+                Debug.LogWarning("[JSON Chart] Non-main-beat note at sample " + jsonNote.hitSample + " for " + songName + ".");
                 return false;
             }
 
@@ -6201,7 +6534,9 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             return;
         }
 
-        StopSongPreview();
+        LocalSongEntry selectedSong = localSongs[index];
+        AudioClip selectedClip = GetExistingSongClip(selectedSong);
+        StopSongPreview(selectedClip);
         StartCoroutine(PlayLocalSongRoutine(index));
     }
 
@@ -6210,7 +6545,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         isLoadingLocalSong = true;
         ShowLoadingScreen();
         LocalSongEntry song = localSongs[index];
-        AudioClip clip = song.ResourceClip != null ? song.ResourceClip : song.LoadedClip;
+        AudioClip clip = GetOrLoadSongClip(song);
 
         if (clip == null)
         {
@@ -6249,7 +6584,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
             }
         }
 
-        ClearCurrentSong();
+        ClearCurrentSong(clip);
         if (clip.loadState != AudioDataLoadState.Loaded)
         {
             murekaStatus = "Preparing audio data: " + song.Name;
@@ -6270,14 +6605,14 @@ public sealed class RhythmGamePrototype : MonoBehaviour
 
         SongAnalysis analysis = null;
         string analysisKey = GetAnalysisCacheKey(clip);
-        if (!songAnalysisCache.TryGetValue(analysisKey, out analysis))
+        if (!TryGetCachedSongAnalysis(analysisKey, out analysis))
         {
             murekaStatus = "Analyzing waveform, BPM and beats: " + song.Name;
             yield return AnalyzeSongRoutine(clip, value => analysis = value);
             if (analysis != null)
             {
                 ApplySongTimingOverride(song.Name, analysis, clip.length);
-                songAnalysisCache[analysisKey] = analysis;
+                CacheSongAnalysis(analysisKey, analysis);
             }
         }
         else
@@ -6320,7 +6655,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         murekaStatus = "Playing " + song.Name + " - " + GetDifficultyPreset().Label + " - " + chartMode;
     }
 
-    private void AddLocalSong(string songName, string filePath, AudioClip resourceClip)
+    private void AddLocalSong(
+        string songName,
+        string filePath,
+        string resourcePath,
+        AudioClip resourceClip)
     {
         if (string.IsNullOrWhiteSpace(songName))
         {
@@ -6336,6 +6675,12 @@ public sealed class RhythmGamePrototype : MonoBehaviour
                     localSongs[i].ResourceClip = resourceClip;
                 }
 
+                if (string.IsNullOrWhiteSpace(localSongs[i].ResourcePath)
+                    && !string.IsNullOrWhiteSpace(resourcePath))
+                {
+                    localSongs[i].ResourcePath = resourcePath;
+                }
+
                 if (string.IsNullOrWhiteSpace(localSongs[i].FilePath) && !string.IsNullOrWhiteSpace(filePath))
                 {
                     localSongs[i].FilePath = filePath;
@@ -6349,6 +6694,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         {
             Name = songName,
             FilePath = filePath,
+            ResourcePath = resourcePath,
             ResourceClip = resourceClip
         });
     }
@@ -6546,10 +6892,11 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         isRequestingMurekaSong = false;
     }
 
-    private void ClearCurrentSong()
+    private void ClearCurrentSong(AudioClip preserveClip = null)
     {
         ResetPauseState();
-        StopSongPreview();
+        AudioClip previousSongClip = currentSongClip;
+        StopSongPreview(preserveClip);
         if (musicSource != null)
         {
             musicSource.Stop();
@@ -6557,6 +6904,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         }
 
         currentSongClip = null;
+        ReleaseAudioData(previousSongClip, preserveClip);
         currentSongAnalysis = null;
         currentChartUsesJson = false;
         selectedLocalSongIndex = -1;
@@ -6786,6 +7134,36 @@ public sealed class RhythmGamePrototype : MonoBehaviour
     private static string GetAnalysisCacheKey(AudioClip clip)
     {
         return clip.name + "|" + clip.samples + "|" + clip.frequency + "|" + clip.channels;
+    }
+
+    private bool TryGetCachedSongAnalysis(string key, out SongAnalysis analysis)
+    {
+        if (!songAnalysisCache.TryGetValue(key, out analysis))
+        {
+            return false;
+        }
+
+        songAnalysisLru.Remove(key);
+        songAnalysisLru.AddLast(key);
+        return true;
+    }
+
+    private void CacheSongAnalysis(string key, SongAnalysis analysis)
+    {
+        if (string.IsNullOrEmpty(key) || analysis == null)
+        {
+            return;
+        }
+
+        songAnalysisCache[key] = analysis;
+        songAnalysisLru.Remove(key);
+        songAnalysisLru.AddLast(key);
+        while (songAnalysisLru.Count > MaxSongAnalysisCacheEntries)
+        {
+            string oldest = songAnalysisLru.First.Value;
+            songAnalysisLru.RemoveFirst();
+            songAnalysisCache.Remove(oldest);
+        }
     }
 
     private IEnumerator AnalyzeSongRoutine(AudioClip clip, Action<SongAnalysis> onDone)
@@ -8269,6 +8647,7 @@ public sealed class RhythmGamePrototype : MonoBehaviour
         musicSource.Stop();
         musicSource.loop = false;
         musicSource.clip = currentSongClip;
+        musicSource.pitch = 1f;
         musicSource.PlayScheduled(songStartDspTime);
     }
 

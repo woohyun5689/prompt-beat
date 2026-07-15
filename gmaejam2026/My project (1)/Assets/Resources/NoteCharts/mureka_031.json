@@ -1,30 +1,461 @@
 {
   "version": 1,
-  "generator": "unity_pcm_nonoverlap_speed_v5",
+  "generator": "bpm_eq_bps_loudness_snowflake_pattern_v8",
   "pcmSource": "Unity AudioClip.GetData",
-  "timingSource": "Unity PCM automatically detected constant musical beat grid",
-  "noteTimingPolicy": "strict main-beat and half-beat grid; no quarter-beat notes",
-  "difficultyPolicy": "EASY 75% main beats; NORMAL sparse half-beat accents; HARD denser irregular half-beat patterns",
-  "colorPatternPolicy": "audio-seeded per-bar pattern bank with rotated, reversed, and inverted variants",
-  "clusterPolicy": "HARD minimum note gap 0.20 seconds; NORMAL/HARD wheel guards remove adjacent extras",
-  "beatGridMode": "constant",
+  "timingSource": "Unity PCM adaptive bar anchors from calibrated musical beat grid",
+  "noteTimingPolicy": "BPM main beats first; exact half-beats are added in highlights, where equalizer, loudness, or local BPS rises, and on HARD where steady-groove audio strongly supports an offbeat; no quarter-beat notes",
+  "difficultyPolicy": "each song keeps its own BPM, loudness-driven density, highlight intensity, and audio-supported HARD groove accents; Snowflake Waltz is used only as a bar-level note-placement and long-note-position grammar",
+  "generationPipeline": [
+    "BPM",
+    "EQUALIZER",
+    "BPS",
+    "LOUDNESS",
+    "LONG_NOTE_CLEARANCE",
+    "SNOWFLAKE_PATTERN"
+  ],
+  "difficultyReference": {
+    "chartKey": "mureka_023",
+    "songName": "눈꽃 왈츠",
+    "policy": "placement_patterns_only_not_note_count_or_density"
+  },
+  "halfBeatPolicy": "EASY disables half-beats; NORMAL uses highlight and rise triggers; HARD also allows one audio-supported groove half-beat in steady bars and relief after two consecutive main-only bars",
+  "longNotePolicy": "no fixed time quota or minimum frequency; strong audio-ranked main beats become long notes, HARD preserves surrounding main beats, and only overlapping half-beats are cleared",
+  "equalizerInputPolicy": "reuse the existing low-pulse, broad-transient, and loudness envelopes without a separate frequency-band scan",
+  "colorPatternPolicy": "tap color follows the low-pulse versus broad-transient balance with a difficulty-specific maximum run length",
+  "clusterPolicy": "no generic tap gap; HARD long-note clearances never remove main beats and clear only overlapping half-beats",
+  "endingPolicy": "notes stop at least 120 ms before the measured audible ending",
+  "beatGridMode": "adaptive_bar_anchors",
   "beatGridSubdivision": 2,
-  "beatPeriodSamples": 25943.15,
-  "beatPhaseSamples": 10473.75,
+  "beatPeriodSamples": 25944.15,
+  "beatPhaseSamples": 9967.75,
+  "manualAnchorCount": 0,
+  "automaticAnchorCount": 49,
+  "adaptiveOffsetP95Ms": 13.9048,
+  "automaticBeatAnchors": [
+    {
+      "beatIndex": 0,
+      "sample": 9968
+    },
+    {
+      "beatIndex": 4,
+      "sample": 113804
+    },
+    {
+      "beatIndex": 8,
+      "sample": 217833
+    },
+    {
+      "beatIndex": 12,
+      "sample": 321350
+    },
+    {
+      "beatIndex": 16,
+      "sample": 425122
+    },
+    {
+      "beatIndex": 20,
+      "sample": 528895
+    },
+    {
+      "beatIndex": 24,
+      "sample": 632859
+    },
+    {
+      "beatIndex": 28,
+      "sample": 736632
+    },
+    {
+      "beatIndex": 32,
+      "sample": 840853
+    },
+    {
+      "beatIndex": 36,
+      "sample": 944881
+    },
+    {
+      "beatIndex": 40,
+      "sample": 1048654
+    },
+    {
+      "beatIndex": 44,
+      "sample": 1152042
+    },
+    {
+      "beatIndex": 48,
+      "sample": 1255815
+    },
+    {
+      "beatIndex": 52,
+      "sample": 1359652
+    },
+    {
+      "beatIndex": 56,
+      "sample": 1463424
+    },
+    {
+      "beatIndex": 60,
+      "sample": 1567197
+    },
+    {
+      "beatIndex": 64,
+      "sample": 1670585
+    },
+    {
+      "beatIndex": 68,
+      "sample": 1774230
+    },
+    {
+      "beatIndex": 72,
+      "sample": 1878003
+    },
+    {
+      "beatIndex": 76,
+      "sample": 1982095
+    },
+    {
+      "beatIndex": 80,
+      "sample": 2085868
+    },
+    {
+      "beatIndex": 84,
+      "sample": 2189192
+    },
+    {
+      "beatIndex": 88,
+      "sample": 2292965
+    },
+    {
+      "beatIndex": 92,
+      "sample": 2396738
+    },
+    {
+      "beatIndex": 96,
+      "sample": 2500638
+    },
+    {
+      "beatIndex": 100,
+      "sample": 2604155
+    },
+    {
+      "beatIndex": 104,
+      "sample": 2707927
+    },
+    {
+      "beatIndex": 108,
+      "sample": 2811700
+    },
+    {
+      "beatIndex": 112,
+      "sample": 2915665
+    },
+    {
+      "beatIndex": 116,
+      "sample": 3019501
+    },
+    {
+      "beatIndex": 120,
+      "sample": 3123722
+    },
+    {
+      "beatIndex": 124,
+      "sample": 3227494
+    },
+    {
+      "beatIndex": 128,
+      "sample": 3331651
+    },
+    {
+      "beatIndex": 132,
+      "sample": 3435552
+    },
+    {
+      "beatIndex": 136,
+      "sample": 3539324
+    },
+    {
+      "beatIndex": 140,
+      "sample": 3642649
+    },
+    {
+      "beatIndex": 144,
+      "sample": 3746229
+    },
+    {
+      "beatIndex": 148,
+      "sample": 3850002
+    },
+    {
+      "beatIndex": 152,
+      "sample": 3953775
+    },
+    {
+      "beatIndex": 156,
+      "sample": 4057675
+    },
+    {
+      "beatIndex": 160,
+      "sample": 4161448
+    },
+    {
+      "beatIndex": 164,
+      "sample": 4265220
+    },
+    {
+      "beatIndex": 168,
+      "sample": 4368993
+    },
+    {
+      "beatIndex": 172,
+      "sample": 4472830
+    },
+    {
+      "beatIndex": 176,
+      "sample": 4576602
+    },
+    {
+      "beatIndex": 180,
+      "sample": 4680055
+    },
+    {
+      "beatIndex": 184,
+      "sample": 4783763
+    },
+    {
+      "beatIndex": 188,
+      "sample": 4887472
+    },
+    {
+      "beatIndex": 192,
+      "sample": 4991245
+    }
+  ],
+  "manualBeatAnchors": [],
+  "timingAnalysisBeats": 16,
+  "timingAnchorBeats": 4,
+  "timingContextWeight": 0.2,
   "precisionHopSamples": 32,
   "precisionPeakCount": 2729,
-  "activeBeatPercent": 97.449,
-  "beatTransientMedianMs": 9.161,
-  "beatTransientP95Ms": 22.8571,
+  "highlightAnalysis": {
+    "barCount": 50,
+    "highlightBarCount": 14,
+    "equalizerRiseBarCount": 10,
+    "loudnessRiseBarCount": 11,
+    "bpsRiseBarCount": 9,
+    "anyTriggerBarCount": 26,
+    "highlightThreshold": 0.960998,
+    "equalizerRiseThreshold": 0.115132,
+    "loudnessRiseThreshold": 0.182701,
+    "bpsRiseThreshold": 0.002471
+  },
+  "audibleEndSample": 4945815,
+  "playableEndSample": 4940523,
+  "endingGuardSeconds": 0.12,
+  "audibleReferenceRms": 0.22969377,
+  "audibleThresholdRms": 0.00229694,
+  "activeBeatPercent": 96.954,
+  "beatTransientMedianMs": 8.6621,
+  "beatTransientP95Ms": 20.0907,
   "songName": "마지막 버스",
   "audioFile": "마지막 버스.mp3",
   "audioSha256": "bcb7d04f9191573e3eab88fae3b4bccdaefa43a9aa3b487e07cc960bf1374e80",
   "sampleRate": 44100,
   "totalSamples": 5095296,
-  "bpm": 101.992241,
+  "bpm": 101.98831,
   "tempoSegments": [
     {
       "timeSeconds": 0.0,
+      "bpm": 101.929378
+    },
+    {
+      "timeSeconds": 2.581,
+      "bpm": 101.741252
+    },
+    {
+      "timeSeconds": 4.94,
+      "bpm": 102.244471
+    },
+    {
+      "timeSeconds": 7.287,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 9.64,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 11.993,
+      "bpm": 101.803883
+    },
+    {
+      "timeSeconds": 14.351,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 16.704,
+      "bpm": 101.553819
+    },
+    {
+      "timeSeconds": 19.067,
+      "bpm": 101.741252
+    },
+    {
+      "timeSeconds": 21.426,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 23.779,
+      "bpm": 102.371054
+    },
+    {
+      "timeSeconds": 26.123,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 28.477,
+      "bpm": 101.929378
+    },
+    {
+      "timeSeconds": 30.831,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 33.184,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 35.537,
+      "bpm": 102.371054
+    },
+    {
+      "timeSeconds": 37.882,
+      "bpm": 102.1182
+    },
+    {
+      "timeSeconds": 40.232,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 42.585,
+      "bpm": 101.678698
+    },
+    {
+      "timeSeconds": 44.945,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 47.299,
+      "bpm": 102.434464
+    },
+    {
+      "timeSeconds": 49.642,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 51.995,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 54.348,
+      "bpm": 101.866592
+    },
+    {
+      "timeSeconds": 56.704,
+      "bpm": 102.244471
+    },
+    {
+      "timeSeconds": 59.051,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 61.404,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 63.757,
+      "bpm": 101.803883
+    },
+    {
+      "timeSeconds": 66.115,
+      "bpm": 101.929378
+    },
+    {
+      "timeSeconds": 68.469,
+      "bpm": 101.553819
+    },
+    {
+      "timeSeconds": 70.833,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 73.186,
+      "bpm": 101.61622
+    },
+    {
+      "timeSeconds": 75.548,
+      "bpm": 101.866592
+    },
+    {
+      "timeSeconds": 77.904,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 80.257,
+      "bpm": 102.434464
+    },
+    {
+      "timeSeconds": 82.6,
+      "bpm": 102.181296
+    },
+    {
+      "timeSeconds": 84.949,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 87.302,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 89.655,
+      "bpm": 101.866592
+    },
+    {
+      "timeSeconds": 92.011,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 94.364,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 96.717,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 99.07,
+      "bpm": 101.929378
+    },
+    {
+      "timeSeconds": 101.425,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 103.778,
+      "bpm": 102.307724
+    },
+    {
+      "timeSeconds": 106.124,
+      "bpm": 102.055182
+    },
+    {
+      "timeSeconds": 108.475,
+      "bpm": 102.055182
+    },
+    {
+      "timeSeconds": 110.827,
+      "bpm": 101.992241
+    },
+    {
+      "timeSeconds": 113.18,
       "bpm": 101.992241
     },
     {
@@ -32,3974 +463,3954 @@
       "bpm": 101.992241
     }
   ],
-  "firstBeatSample": 10474,
+  "firstBeatSample": 9968,
   "beatSamples": [
-    10474,
-    36417,
-    62360,
-    88303,
-    114246,
-    140189,
-    166133,
-    192076,
-    218019,
-    243962,
-    269905,
-    295848,
-    321792,
-    347735,
-    373678,
-    399621,
-    425564,
-    451507,
-    477450,
-    503394,
-    529337,
-    555280,
-    581223,
-    607166,
-    633109,
-    659052,
-    684996,
-    710939,
-    736882,
-    762825,
-    788768,
-    814711,
-    840655,
-    866598,
-    892541,
-    918484,
-    944427,
-    970370,
-    996313,
-    1022257,
-    1048200,
-    1074143,
-    1100086,
-    1126029,
-    1151972,
-    1177915,
-    1203859,
-    1229802,
-    1255745,
-    1281688,
-    1307631,
-    1333574,
-    1359518,
-    1385461,
-    1411404,
-    1437347,
-    1463290,
-    1489233,
-    1515176,
-    1541120,
-    1567063,
-    1593006,
-    1618949,
-    1644892,
-    1670835,
-    1696778,
-    1722722,
-    1748665,
-    1774608,
-    1800551,
-    1826494,
-    1852437,
-    1878381,
-    1904324,
-    1930267,
-    1956210,
-    1982153,
-    2008096,
-    2034039,
-    2059983,
-    2085926,
-    2111869,
-    2137812,
-    2163755,
-    2189698,
-    2215641,
-    2241585,
-    2267528,
-    2293471,
-    2319414,
-    2345357,
-    2371300,
-    2397244,
-    2423187,
-    2449130,
-    2475073,
-    2501016,
-    2526959,
-    2552902,
-    2578846,
-    2604789,
-    2630732,
-    2656675,
-    2682618,
-    2708561,
-    2734504,
-    2760448,
-    2786391,
-    2812334,
-    2838277,
-    2864220,
-    2890163,
-    2916107,
-    2942050,
-    2967993,
-    2993936,
-    3019879,
-    3045822,
-    3071765,
-    3097709,
-    3123652,
-    3149595,
-    3175538,
-    3201481,
-    3227424,
-    3253367,
-    3279311,
-    3305254,
-    3331197,
-    3357140,
-    3383083,
-    3409026,
-    3434970,
-    3460913,
-    3486856,
-    3512799,
-    3538742,
-    3564685,
-    3590628,
-    3616572,
-    3642515,
-    3668458,
-    3694401,
-    3720344,
-    3746287,
-    3772230,
-    3798174,
-    3824117,
-    3850060,
-    3876003,
-    3901946,
-    3927889,
-    3953833,
-    3979776,
-    4005719,
-    4031662,
-    4057605,
-    4083548,
-    4109491,
-    4135435,
-    4161378,
-    4187321,
-    4213264,
-    4239207,
-    4265150,
-    4291093,
-    4317037,
-    4342980,
-    4368923,
-    4394866,
-    4420809,
-    4446752,
-    4472696,
-    4498639,
-    4524582,
-    4550525,
-    4576468,
-    4602411,
-    4628354,
-    4654298,
-    4680241,
-    4706184,
-    4732127,
-    4758070,
-    4784013,
-    4809956,
-    4835900,
-    4861843,
-    4887786,
-    4913729,
-    4939672,
-    4965615,
-    4991559,
-    5017502,
-    5043445,
-    5069388
+    9968,
+    35927,
+    61886,
+    87845,
+    113804,
+    139811,
+    165819,
+    191826,
+    217833,
+    243712,
+    269591,
+    295470,
+    321350,
+    347293,
+    373236,
+    399179,
+    425122,
+    451065,
+    477008,
+    502952,
+    528895,
+    554886,
+    580877,
+    606868,
+    632859,
+    658802,
+    684746,
+    710689,
+    736632,
+    762687,
+    788742,
+    814797,
+    840853,
+    866860,
+    892867,
+    918874,
+    944881,
+    970824,
+    996767,
+    1022711,
+    1048654,
+    1074501,
+    1100348,
+    1126195,
+    1152042,
+    1177985,
+    1203929,
+    1229872,
+    1255815,
+    1281774,
+    1307733,
+    1333692,
+    1359652,
+    1385595,
+    1411538,
+    1437481,
+    1463424,
+    1489367,
+    1515310,
+    1541254,
+    1567197,
+    1593044,
+    1618891,
+    1644738,
+    1670585,
+    1696496,
+    1722408,
+    1748319,
+    1774230,
+    1800173,
+    1826116,
+    1852059,
+    1878003,
+    1904026,
+    1930049,
+    1956072,
+    1982095,
+    2008038,
+    2033981,
+    2059925,
+    2085868,
+    2111699,
+    2137530,
+    2163361,
+    2189192,
+    2215135,
+    2241079,
+    2267022,
+    2292965,
+    2318908,
+    2344851,
+    2370794,
+    2396738,
+    2422713,
+    2448688,
+    2474663,
+    2500638,
+    2526517,
+    2552396,
+    2578276,
+    2604155,
+    2630098,
+    2656041,
+    2681984,
+    2707927,
+    2733870,
+    2759814,
+    2785757,
+    2811700,
+    2837691,
+    2863682,
+    2889673,
+    2915665,
+    2941624,
+    2967583,
+    2993542,
+    3019501,
+    3045556,
+    3071611,
+    3097667,
+    3123722,
+    3149665,
+    3175608,
+    3201551,
+    3227494,
+    3253533,
+    3279573,
+    3305612,
+    3331651,
+    3357626,
+    3383601,
+    3409576,
+    3435552,
+    3461495,
+    3487438,
+    3513381,
+    3539324,
+    3565155,
+    3590986,
+    3616818,
+    3642649,
+    3668544,
+    3694439,
+    3720334,
+    3746229,
+    3772172,
+    3798116,
+    3824059,
+    3850002,
+    3875945,
+    3901888,
+    3927831,
+    3953775,
+    3979750,
+    4005725,
+    4031700,
+    4057675,
+    4083618,
+    4109561,
+    4135505,
+    4161448,
+    4187391,
+    4213334,
+    4239277,
+    4265220,
+    4291163,
+    4317107,
+    4343050,
+    4368993,
+    4394952,
+    4420911,
+    4446870,
+    4472830,
+    4498773,
+    4524716,
+    4550659,
+    4576602,
+    4602465,
+    4628328,
+    4654192,
+    4680055,
+    4705982,
+    4731909,
+    4757836,
+    4783763,
+    4809690,
+    4835618,
+    4861545,
+    4887472,
+    4913415,
+    4939358,
+    4965301,
+    4991245,
+    5017188,
+    5043131,
+    5069074,
+    5095017
   ],
   "gridSamples": [
-    10474,
-    23445,
-    36417,
-    49388,
-    62360,
-    75332,
-    88303,
-    101275,
-    114246,
-    127218,
-    140189,
-    153161,
-    166133,
-    179104,
-    192076,
-    205047,
-    218019,
-    230991,
-    243962,
-    256934,
-    269905,
-    282877,
-    295848,
-    308820,
-    321792,
-    334763,
-    347735,
-    360706,
-    373678,
-    386649,
-    399621,
-    412593,
-    425564,
-    438536,
-    451507,
-    464479,
-    477450,
-    490422,
-    503394,
-    516365,
-    529337,
-    542308,
-    555280,
-    568251,
-    581223,
-    594195,
-    607166,
-    620138,
-    633109,
-    646081,
-    659052,
-    672024,
-    684996,
-    697967,
-    710939,
-    723910,
-    736882,
-    749854,
-    762825,
-    775797,
-    788768,
-    801740,
-    814711,
-    827683,
-    840655,
-    853626,
-    866598,
-    879569,
-    892541,
-    905512,
-    918484,
-    931456,
-    944427,
-    957399,
-    970370,
-    983342,
-    996313,
-    1009285,
-    1022257,
-    1035228,
-    1048200,
-    1061171,
-    1074143,
-    1087114,
-    1100086,
-    1113058,
-    1126029,
-    1139001,
-    1151972,
-    1164944,
-    1177915,
-    1190887,
-    1203859,
-    1216830,
-    1229802,
-    1242773,
-    1255745,
-    1268717,
-    1281688,
-    1294660,
-    1307631,
-    1320603,
-    1333574,
-    1346546,
-    1359518,
-    1372489,
-    1385461,
-    1398432,
-    1411404,
-    1424375,
-    1437347,
-    1450319,
-    1463290,
-    1476262,
-    1489233,
-    1502205,
-    1515176,
-    1528148,
-    1541120,
-    1554091,
-    1567063,
-    1580034,
-    1593006,
-    1605977,
-    1618949,
-    1631921,
-    1644892,
-    1657864,
-    1670835,
-    1683807,
-    1696778,
-    1709750,
-    1722722,
-    1735693,
-    1748665,
-    1761636,
-    1774608,
-    1787580,
-    1800551,
-    1813523,
-    1826494,
-    1839466,
-    1852437,
-    1865409,
-    1878381,
-    1891352,
-    1904324,
-    1917295,
-    1930267,
-    1943238,
-    1956210,
-    1969182,
-    1982153,
-    1995125,
-    2008096,
-    2021068,
-    2034039,
-    2047011,
-    2059983,
-    2072954,
-    2085926,
-    2098897,
-    2111869,
-    2124840,
-    2137812,
-    2150784,
-    2163755,
-    2176727,
-    2189698,
-    2202670,
-    2215641,
-    2228613,
-    2241585,
-    2254556,
-    2267528,
-    2280499,
-    2293471,
-    2306443,
-    2319414,
-    2332386,
-    2345357,
-    2358329,
-    2371300,
-    2384272,
-    2397244,
-    2410215,
-    2423187,
-    2436158,
-    2449130,
-    2462101,
-    2475073,
-    2488045,
-    2501016,
-    2513988,
-    2526959,
-    2539931,
-    2552902,
-    2565874,
-    2578846,
-    2591817,
-    2604789,
-    2617760,
-    2630732,
-    2643703,
-    2656675,
-    2669647,
-    2682618,
-    2695590,
-    2708561,
-    2721533,
-    2734504,
-    2747476,
-    2760448,
-    2773419,
-    2786391,
-    2799362,
-    2812334,
-    2825306,
-    2838277,
-    2851249,
-    2864220,
-    2877192,
-    2890163,
-    2903135,
-    2916107,
-    2929078,
-    2942050,
-    2955021,
-    2967993,
-    2980964,
-    2993936,
-    3006908,
-    3019879,
-    3032851,
-    3045822,
-    3058794,
-    3071765,
-    3084737,
-    3097709,
-    3110680,
-    3123652,
-    3136623,
-    3149595,
-    3162566,
-    3175538,
-    3188510,
-    3201481,
-    3214453,
-    3227424,
-    3240396,
-    3253367,
-    3266339,
-    3279311,
-    3292282,
-    3305254,
-    3318225,
-    3331197,
-    3344169,
-    3357140,
-    3370112,
-    3383083,
-    3396055,
-    3409026,
-    3421998,
-    3434970,
-    3447941,
-    3460913,
-    3473884,
-    3486856,
-    3499827,
-    3512799,
-    3525771,
-    3538742,
-    3551714,
-    3564685,
-    3577657,
-    3590628,
-    3603600,
-    3616572,
-    3629543,
-    3642515,
-    3655486,
-    3668458,
-    3681429,
-    3694401,
-    3707373,
-    3720344,
-    3733316,
-    3746287,
-    3759259,
-    3772230,
-    3785202,
-    3798174,
-    3811145,
-    3824117,
-    3837088,
-    3850060,
-    3863032,
-    3876003,
-    3888975,
-    3901946,
-    3914918,
-    3927889,
-    3940861,
-    3953833,
-    3966804,
-    3979776,
-    3992747,
-    4005719,
-    4018690,
-    4031662,
-    4044634,
-    4057605,
-    4070577,
-    4083548,
-    4096520,
-    4109491,
-    4122463,
-    4135435,
-    4148406,
-    4161378,
-    4174349,
-    4187321,
-    4200292,
-    4213264,
-    4226236,
-    4239207,
-    4252179,
-    4265150,
-    4278122,
-    4291093,
-    4304065,
-    4317037,
-    4330008,
-    4342980,
-    4355951,
-    4368923,
-    4381895,
-    4394866,
-    4407838,
-    4420809,
-    4433781,
-    4446752,
-    4459724,
-    4472696,
-    4485667,
-    4498639,
-    4511610,
-    4524582,
-    4537553,
-    4550525,
-    4563497,
-    4576468,
-    4589440,
-    4602411,
-    4615383,
-    4628354,
-    4641326,
-    4654298,
-    4667269,
-    4680241,
-    4693212,
-    4706184,
-    4719155,
-    4732127,
-    4745099,
-    4758070,
-    4771042,
-    4784013,
-    4796985,
-    4809956,
-    4822928,
-    4835900,
-    4848871,
-    4861843,
-    4874814,
-    4887786,
-    4900758,
-    4913729,
-    4926701,
-    4939672,
-    4952644,
-    4965615,
-    4978587,
-    4991559,
-    5004530,
-    5017502,
-    5030473,
-    5043445,
-    5056416,
-    5069388,
-    5082360
+    9968,
+    22947,
+    35927,
+    48906,
+    61886,
+    74866,
+    87845,
+    100825,
+    113804,
+    126808,
+    139811,
+    152815,
+    165819,
+    178822,
+    191826,
+    204829,
+    217833,
+    230773,
+    243712,
+    256652,
+    269591,
+    282531,
+    295470,
+    308410,
+    321350,
+    334321,
+    347293,
+    360264,
+    373236,
+    386207,
+    399179,
+    412151,
+    425122,
+    438094,
+    451065,
+    464037,
+    477008,
+    489980,
+    502952,
+    515923,
+    528895,
+    541890,
+    554886,
+    567881,
+    580877,
+    593873,
+    606868,
+    619864,
+    632859,
+    645831,
+    658802,
+    671774,
+    684746,
+    697717,
+    710689,
+    723660,
+    736632,
+    749660,
+    762687,
+    775715,
+    788742,
+    801770,
+    814797,
+    827825,
+    840853,
+    853856,
+    866860,
+    879863,
+    892867,
+    905870,
+    918874,
+    931878,
+    944881,
+    957853,
+    970824,
+    983796,
+    996767,
+    1009739,
+    1022711,
+    1035682,
+    1048654,
+    1061577,
+    1074501,
+    1087424,
+    1100348,
+    1113272,
+    1126195,
+    1139119,
+    1152042,
+    1165014,
+    1177985,
+    1190957,
+    1203929,
+    1216900,
+    1229872,
+    1242843,
+    1255815,
+    1268795,
+    1281774,
+    1294754,
+    1307733,
+    1320713,
+    1333692,
+    1346672,
+    1359652,
+    1372623,
+    1385595,
+    1398566,
+    1411538,
+    1424509,
+    1437481,
+    1450453,
+    1463424,
+    1476396,
+    1489367,
+    1502339,
+    1515310,
+    1528282,
+    1541254,
+    1554225,
+    1567197,
+    1580120,
+    1593044,
+    1605967,
+    1618891,
+    1631815,
+    1644738,
+    1657662,
+    1670585,
+    1683541,
+    1696496,
+    1709452,
+    1722408,
+    1735363,
+    1748319,
+    1761274,
+    1774230,
+    1787202,
+    1800173,
+    1813145,
+    1826116,
+    1839088,
+    1852059,
+    1865031,
+    1878003,
+    1891014,
+    1904026,
+    1917037,
+    1930049,
+    1943060,
+    1956072,
+    1969084,
+    1982095,
+    1995067,
+    2008038,
+    2021010,
+    2033981,
+    2046953,
+    2059925,
+    2072896,
+    2085868,
+    2098783,
+    2111699,
+    2124614,
+    2137530,
+    2150446,
+    2163361,
+    2176277,
+    2189192,
+    2202164,
+    2215135,
+    2228107,
+    2241079,
+    2254050,
+    2267022,
+    2279993,
+    2292965,
+    2305937,
+    2318908,
+    2331880,
+    2344851,
+    2357823,
+    2370794,
+    2383766,
+    2396738,
+    2409725,
+    2422713,
+    2435700,
+    2448688,
+    2461675,
+    2474663,
+    2487651,
+    2500638,
+    2513578,
+    2526517,
+    2539457,
+    2552396,
+    2565336,
+    2578276,
+    2591215,
+    2604155,
+    2617126,
+    2630098,
+    2643069,
+    2656041,
+    2669013,
+    2681984,
+    2694956,
+    2707927,
+    2720899,
+    2733870,
+    2746842,
+    2759814,
+    2772785,
+    2785757,
+    2798728,
+    2811700,
+    2824696,
+    2837691,
+    2850687,
+    2863682,
+    2876678,
+    2889673,
+    2902669,
+    2915665,
+    2928644,
+    2941624,
+    2954603,
+    2967583,
+    2980562,
+    2993542,
+    3006522,
+    3019501,
+    3032529,
+    3045556,
+    3058584,
+    3071611,
+    3084639,
+    3097667,
+    3110694,
+    3123722,
+    3136693,
+    3149665,
+    3162636,
+    3175608,
+    3188580,
+    3201551,
+    3214523,
+    3227494,
+    3240514,
+    3253533,
+    3266553,
+    3279573,
+    3292592,
+    3305612,
+    3318631,
+    3331651,
+    3344639,
+    3357626,
+    3370614,
+    3383601,
+    3396589,
+    3409576,
+    3422564,
+    3435552,
+    3448523,
+    3461495,
+    3474466,
+    3487438,
+    3500409,
+    3513381,
+    3526353,
+    3539324,
+    3552240,
+    3565155,
+    3578071,
+    3590986,
+    3603902,
+    3616818,
+    3629733,
+    3642649,
+    3655596,
+    3668544,
+    3681491,
+    3694439,
+    3707387,
+    3720334,
+    3733282,
+    3746229,
+    3759201,
+    3772172,
+    3785144,
+    3798116,
+    3811087,
+    3824059,
+    3837030,
+    3850002,
+    3862974,
+    3875945,
+    3888917,
+    3901888,
+    3914860,
+    3927831,
+    3940803,
+    3953775,
+    3966762,
+    3979750,
+    3992737,
+    4005725,
+    4018712,
+    4031700,
+    4044688,
+    4057675,
+    4070647,
+    4083618,
+    4096590,
+    4109561,
+    4122533,
+    4135505,
+    4148476,
+    4161448,
+    4174419,
+    4187391,
+    4200362,
+    4213334,
+    4226306,
+    4239277,
+    4252249,
+    4265220,
+    4278192,
+    4291163,
+    4304135,
+    4317107,
+    4330078,
+    4343050,
+    4356021,
+    4368993,
+    4381973,
+    4394952,
+    4407932,
+    4420911,
+    4433891,
+    4446870,
+    4459850,
+    4472830,
+    4485801,
+    4498773,
+    4511744,
+    4524716,
+    4537687,
+    4550659,
+    4563631,
+    4576602,
+    4589534,
+    4602465,
+    4615397,
+    4628328,
+    4641260,
+    4654192,
+    4667123,
+    4680055,
+    4693018,
+    4705982,
+    4718945,
+    4731909,
+    4744873,
+    4757836,
+    4770800,
+    4783763,
+    4796727,
+    4809690,
+    4822654,
+    4835618,
+    4848581,
+    4861545,
+    4874508,
+    4887472,
+    4900444,
+    4913415,
+    4926387,
+    4939358,
+    4952330,
+    4965301,
+    4978273,
+    4991245,
+    5004216,
+    5017188,
+    5030159,
+    5043131,
+    5056102,
+    5069074,
+    5082046,
+    5095017
   ],
   "charts": [
     {
       "difficulty": "EASY",
-      "targetDensityPercent": 75,
-      "actualDensityPercent": 75.0,
-      "activeBeatCount": 192,
+      "actualDensityPercent": 70.681,
+      "activeBeatCount": 191,
+      "halfBeatAllowed": false,
+      "noteSpeedWorldUnitsPerSecond": 5.1,
       "colorRunLength": 4,
-      "colorPattern": "audio_seeded_variant_bank",
-      "colorPatternVariantCount": 36,
+      "colorPattern": "equalizer_dominant_band",
       "burstNoteCount": 0,
       "quarterBurstNoteCount": 0,
-      "wheelWindowSeconds": 24.0,
-      "wheelMinimumGapSeconds": 18.0,
+      "halfBeatSelectionPolicy": "highlight_or_equalizer_rise_or_loudness_rise_or_bps_rise_only",
+      "maximumHalfBeatsPerHighlightBar": 0,
+      "highlightTargetBonus": 0,
+      "halfBeatEligibleBarCount": 0,
+      "halfBeatSelectedBarCount": 0,
+      "halfBeatHighlightNoteCount": 0,
+      "halfBeatEqualizerRiseNoteCount": 0,
+      "halfBeatLoudnessRiseNoteCount": 0,
+      "halfBeatBpsRiseNoteCount": 0,
+      "grooveHalfBeatAllowed": false,
+      "grooveHalfBeatScorePercentile": 0.0,
+      "grooveHalfBeatScoreThreshold": 0.0,
+      "grooveHalfBeatReliefPercentile": 0.0,
+      "maximumGrooveHalfBeatsPerBar": 0,
+      "maximumMainOnlyBarsBeforeRelief": 0,
+      "grooveHalfBeatEligibleBarCount": 0,
+      "grooveHalfBeatFallbackBarCount": 0,
+      "grooveHalfBeatSelectedNoteCount": 0,
+      "streakReliefHalfBeatCount": 0,
+      "minimumGapSamples": 0,
+      "estimatedBpm": 101.99283,
+      "wheelSelectionPolicy": "audio_score_percentile_with_snowflake_wheel_slot_bias",
+      "wheelScorePercentile": 98.0,
+      "wheelScoreThreshold": 1.845089,
+      "wheelLeadClearanceSamples": 14994,
+      "wheelRecoveryClearanceSamples": 52920,
+      "wheelMainBeatPreservation": false,
+      "wheelClearancePolicy": "clear_all_overlapping_notes",
+      "wheelNoteCount": 3,
+      "wheelClearanceRemovedCount": 5,
+      "referenceChartKey": "mureka_023",
+      "referenceSongName": "눈꽃 왈츠",
+      "referencePatternApplied": true,
+      "referenceUniquePatternCount": 13,
+      "referencePatternMatchedBarCount": 48,
+      "referencePatternRepositionedBarCount": 11,
+      "finalNoteCount": 135,
+      "bpmBaseCount": 191,
+      "equalizerRemovedCount": 47,
+      "equalizerAddedCount": 0,
+      "bpsRemovedCount": 19,
+      "bpsAddedCount": 0,
+      "loudnessRemovedCount": 0,
+      "loudnessAddedCount": 15,
+      "localBpsMinimum": 1.692557,
+      "localBpsMaximum": 1.707251,
+      "targetNotesPerSecondMinimum": 1.150939,
+      "targetNotesPerSecondMaximum": 1.160931,
+      "pipelineStages": [
+        {
+          "order": 1,
+          "name": "BPM",
+          "added": 191,
+          "removed": 0,
+          "result": 191
+        },
+        {
+          "order": 2,
+          "name": "EQUALIZER",
+          "added": 0,
+          "removed": 47,
+          "result": 144
+        },
+        {
+          "order": 3,
+          "name": "BPS",
+          "added": 0,
+          "removed": 19,
+          "result": 125
+        },
+        {
+          "order": 4,
+          "name": "LOUDNESS",
+          "added": 15,
+          "removed": 0,
+          "result": 140
+        },
+        {
+          "order": 5,
+          "name": "LONG_NOTE_CLEARANCE",
+          "added": 0,
+          "removed": 5,
+          "result": 135
+        },
+        {
+          "order": 6,
+          "name": "SNOWFLAKE_PATTERN",
+          "added": 0,
+          "removed": 0,
+          "result": 135,
+          "repositionedBars": 11
+        }
+      ],
       "notes": [
         {
-          "hitSample": 10474,
+          "hitSample": 9968,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 36417,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 88303,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 114246,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 140189,
+          "hitSample": 35927,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 192076,
+          "hitSample": 87845,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 218019,
+          "hitSample": 113804,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 243962,
+          "hitSample": 139811,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 165819,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 295848,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 321792,
+          "hitSample": 217833,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 347735,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 399621,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 425564,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 477450,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 503394,
+          "hitSample": 243712,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 529337,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 581223,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 607166,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 633109,
+          "hitSample": 269591,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 659052,
+          "hitSample": 321350,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 373236,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 684996,
+          "hitSample": 425122,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 736882,
+          "hitSample": 451065,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 477008,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 502952,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 528895,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 580877,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 632859,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 684746,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 736632,
+          "kind": "BadWheelDown",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 840853,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 866860,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 892867,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 944881,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 996767,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1048654,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1152042,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1229872,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1255815,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1281774,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1307733,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1333692,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1359652,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1385595,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1411538,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1437481,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1463424,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1489367,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1515310,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1541254,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1567197,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1618891,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1644738,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1670585,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1696496,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1722408,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1774230,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1800173,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1826116,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1878003,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1904026,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1930049,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1982095,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2008038,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2033981,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2059925,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2085868,
+          "kind": "BadWheelDown",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2163361,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2189192,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2215135,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2241079,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2267022,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2292965,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2396738,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2422713,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2448688,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2500638,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2526517,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2552396,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2604155,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2656041,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2707927,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2733870,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2759814,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2811700,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2837691,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2863682,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2889673,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2915665,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2967583,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3019501,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3071611,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3097667,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3123722,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3149665,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3175608,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3227494,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3279573,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3331651,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3383601,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3435552,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3487438,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3513381,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3539324,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3565155,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3590986,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3642649,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3668544,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3694439,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3720334,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3746229,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3798116,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3824059,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3850002,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3875945,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3901888,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3927831,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3953775,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4005725,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4031700,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4057675,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4109561,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4161448,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4187391,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4213334,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4239277,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4265220,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4291163,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4317107,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4343050,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4368993,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4394952,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4420911,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4472830,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4498773,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4524716,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4550659,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4576602,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 762825,
+          "hitSample": 4654192,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4680055,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4705982,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4731909,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 788768,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 840655,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 866598,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 892541,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 944427,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 996313,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1022257,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1048200,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1074143,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1126029,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1151972,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1177915,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1229802,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1255745,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1307631,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1333574,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1359518,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1385461,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1411404,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1463290,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1515176,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1541120,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1567063,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1618949,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1644892,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1670835,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1696778,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1748665,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1774608,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1826494,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1852437,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1878381,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1930267,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1956210,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1982153,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2008096,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2059983,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2085926,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2137812,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2163755,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2189698,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2215641,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2241585,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2293471,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2345357,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2371300,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2397244,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2423187,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2449130,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2501016,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2526959,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2552902,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2604789,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2656675,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2682618,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2708561,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2760448,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2786391,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2812334,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2838277,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2890163,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2916107,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2967993,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2993936,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3019879,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3071765,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3097709,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3123652,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3175538,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3201481,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3227424,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3279311,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3305254,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3331197,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3357140,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3383083,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3434970,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3486856,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3512799,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3538742,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3590628,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3616572,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3642515,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3668458,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3694401,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3746287,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3798174,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3824117,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3850060,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3901946,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3927889,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3953833,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4005719,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4031662,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4057605,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4109491,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4135435,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4161378,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4187321,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4239207,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4265150,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4291093,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4317037,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4368923,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4394866,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4446752,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4472696,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4498639,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4550525,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4576468,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4602411,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4628354,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4680241,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4732127,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4758070,
+          "hitSample": 4757836,
           "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4784013,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4835900,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4861843,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4887786,
-          "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4913729,
+          "hitSample": 4783763,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4939672,
+          "hitSample": 4887472,
           "kind": "GoodTap",
           "laneIndex": 1
         }
-      ],
-      "nestedNotesRemoved": 0,
-      "colorPatternVariantsUsed": 31
+      ]
     },
     {
       "difficulty": "NORMAL",
-      "targetDensityPercent": 100,
-      "actualDensityPercent": 110.938,
-      "activeBeatCount": 192,
+      "actualDensityPercent": 105.236,
+      "activeBeatCount": 191,
+      "halfBeatAllowed": true,
+      "noteSpeedWorldUnitsPerSecond": 5.66,
       "colorRunLength": 3,
-      "colorPattern": "audio_seeded_variant_bank",
-      "colorPatternVariantCount": 56,
-      "burstNoteCount": 21,
+      "colorPattern": "equalizer_dominant_band",
+      "burstNoteCount": 37,
       "quarterBurstNoteCount": 0,
-      "wheelWindowSeconds": 15.0,
-      "wheelMinimumGapSeconds": 11.0,
+      "halfBeatSelectionPolicy": "highlight_or_equalizer_rise_or_loudness_rise_or_bps_rise_only",
+      "maximumHalfBeatsPerHighlightBar": 2,
+      "highlightTargetBonus": 2,
+      "halfBeatEligibleBarCount": 26,
+      "halfBeatSelectedBarCount": 23,
+      "halfBeatHighlightNoteCount": 23,
+      "halfBeatEqualizerRiseNoteCount": 13,
+      "halfBeatLoudnessRiseNoteCount": 15,
+      "halfBeatBpsRiseNoteCount": 10,
+      "grooveHalfBeatAllowed": false,
+      "grooveHalfBeatScorePercentile": 0.0,
+      "grooveHalfBeatScoreThreshold": 0.0,
+      "grooveHalfBeatReliefPercentile": 0.0,
+      "maximumGrooveHalfBeatsPerBar": 0,
+      "maximumMainOnlyBarsBeforeRelief": 0,
+      "grooveHalfBeatEligibleBarCount": 0,
+      "grooveHalfBeatFallbackBarCount": 0,
+      "grooveHalfBeatSelectedNoteCount": 0,
+      "streakReliefHalfBeatCount": 0,
+      "minimumGapSamples": 0,
+      "estimatedBpm": 101.99283,
+      "wheelSelectionPolicy": "audio_score_percentile_with_snowflake_wheel_slot_bias",
+      "wheelScorePercentile": 96.0,
+      "wheelScoreThreshold": 1.822672,
+      "wheelLeadClearanceSamples": 14994,
+      "wheelRecoveryClearanceSamples": 41895,
+      "wheelMainBeatPreservation": false,
+      "wheelClearancePolicy": "clear_all_overlapping_notes",
+      "wheelNoteCount": 7,
+      "wheelClearanceRemovedCount": 14,
+      "referenceChartKey": "mureka_023",
+      "referenceSongName": "눈꽃 왈츠",
+      "referencePatternApplied": true,
+      "referenceUniquePatternCount": 30,
+      "referencePatternMatchedBarCount": 48,
+      "referencePatternRepositionedBarCount": 17,
+      "finalNoteCount": 201,
+      "bpmBaseCount": 191,
+      "equalizerRemovedCount": 23,
+      "equalizerAddedCount": 16,
+      "bpsRemovedCount": 0,
+      "bpsAddedCount": 26,
+      "loudnessRemovedCount": 0,
+      "loudnessAddedCount": 5,
+      "localBpsMinimum": 1.692557,
+      "localBpsMaximum": 1.707251,
+      "targetNotesPerSecondMinimum": 1.726408,
+      "targetNotesPerSecondMaximum": 1.741396,
+      "pipelineStages": [
+        {
+          "order": 1,
+          "name": "BPM",
+          "added": 191,
+          "removed": 0,
+          "result": 191
+        },
+        {
+          "order": 2,
+          "name": "EQUALIZER",
+          "added": 16,
+          "removed": 23,
+          "result": 184
+        },
+        {
+          "order": 3,
+          "name": "BPS",
+          "added": 26,
+          "removed": 0,
+          "result": 210
+        },
+        {
+          "order": 4,
+          "name": "LOUDNESS",
+          "added": 5,
+          "removed": 0,
+          "result": 215
+        },
+        {
+          "order": 5,
+          "name": "LONG_NOTE_CLEARANCE",
+          "added": 0,
+          "removed": 14,
+          "result": 201
+        },
+        {
+          "order": 6,
+          "name": "SNOWFLAKE_PATTERN",
+          "added": 0,
+          "removed": 0,
+          "result": 201,
+          "repositionedBars": 17
+        }
+      ],
       "notes": [
         {
-          "hitSample": 10474,
+          "hitSample": 9968,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 23445,
+          "hitSample": 35927,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 36417,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 62360,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 88303,
+          "hitSample": 61886,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 114246,
+          "hitSample": 113804,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 140189,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 166133,
+          "hitSample": 139811,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 192076,
+          "hitSample": 165819,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 218019,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 230991,
+          "hitSample": 217833,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 243962,
+          "hitSample": 230773,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 269905,
+          "hitSample": 243712,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 295848,
+          "hitSample": 256652,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 321792,
+          "hitSample": 269591,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 347735,
+          "hitSample": 295470,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 373678,
+          "hitSample": 321350,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 399621,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 425564,
+          "hitSample": 347293,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 451507,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 477450,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 503394,
+          "hitSample": 373236,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 516365,
+          "hitSample": 425122,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 529337,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 555280,
+          "hitSample": 451065,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 581223,
+          "hitSample": 464037,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 607166,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 633109,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 659052,
+          "hitSample": 477008,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 684996,
+          "hitSample": 502952,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 528895,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 710939,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 736882,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 762825,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 788768,
+          "hitSample": 541890,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 814711,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 840655,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 866598,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 892541,
+          "hitSample": 554886,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 905512,
+          "hitSample": 580877,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 606868,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 918484,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 944427,
+          "hitSample": 632859,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 970370,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 996313,
+          "hitSample": 645831,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1022257,
+          "hitSample": 658802,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1048200,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1061171,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1074143,
+          "hitSample": 684746,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1100086,
+          "hitSample": 710689,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1126029,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1151972,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1177915,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1203859,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1229802,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1255745,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1281688,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1294660,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1307631,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1333574,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1359518,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1385461,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1411404,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1437347,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1463290,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1489233,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1502205,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1515176,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1541120,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1567063,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1593006,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1618949,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1644892,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1670835,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1696778,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1709750,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1722722,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1748665,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1774608,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1800551,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1826494,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1852437,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1878381,
+          "hitSample": 736632,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 1904324,
+          "hitSample": 788742,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1930267,
+          "hitSample": 814797,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 827825,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 840853,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 866860,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1956210,
+          "hitSample": 879863,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 892867,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 905870,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 918874,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1982153,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2008096,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2034039,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2059983,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2085926,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2111869,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2137812,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2150784,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2163755,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2189698,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2215641,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2241585,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2267528,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2293471,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2319414,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2345357,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2371300,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2384272,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2397244,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2423187,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2449130,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2475073,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2501016,
+          "hitSample": 944881,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 2526959,
+          "hitSample": 996767,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1022711,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1048654,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2539931,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2552902,
+          "hitSample": 1074501,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2578846,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2604789,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2630732,
+          "hitSample": 1152042,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2656675,
+          "hitSample": 1229872,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2682618,
+          "hitSample": 1255815,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1268795,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1281774,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2708561,
+          "hitSample": 1307733,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2734504,
+          "hitSample": 1320713,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1333692,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1359652,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2747476,
+          "hitSample": 1372623,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2760448,
+          "hitSample": 1385595,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2786391,
+          "hitSample": 1411538,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1437481,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2812334,
+          "hitSample": 1463424,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2838277,
+          "hitSample": 1476396,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1489367,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1502339,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2864220,
+          "hitSample": 1515310,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2890163,
+          "hitSample": 1541254,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1567197,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1580120,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2916107,
+          "hitSample": 1593044,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1618891,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1631815,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1644738,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2942050,
+          "hitSample": 1670585,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1696496,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1722408,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1748319,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2955021,
+          "hitSample": 1774230,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2967993,
+          "hitSample": 1800173,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2993936,
+          "hitSample": 1826116,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3019879,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3045822,
+          "hitSample": 1852059,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3071765,
+          "hitSample": 1878003,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3097709,
+          "hitSample": 1904026,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3123652,
+          "hitSample": 1930049,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3149595,
+          "hitSample": 1956072,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3162566,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3175538,
+          "hitSample": 1982095,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3201481,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3227424,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3253367,
+          "hitSample": 1995067,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3279311,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3305254,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3331197,
+          "hitSample": 2008038,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3357140,
+          "hitSample": 2021010,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3383083,
+          "hitSample": 2033981,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3396055,
+          "hitSample": 2059925,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3409026,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3434970,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3460913,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3486856,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3512799,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3538742,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3551714,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3564685,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3590628,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3616572,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3642515,
+          "hitSample": 2085868,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 3668458,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3694401,
+          "hitSample": 2137530,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3720344,
+          "hitSample": 2163361,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3746287,
+          "hitSample": 2176277,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3772230,
+          "hitSample": 2189192,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2215135,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2228107,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3785202,
+          "hitSample": 2241079,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2254050,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2267022,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2292965,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3798174,
+          "hitSample": 2396738,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3824117,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3850060,
+          "hitSample": 2422713,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3876003,
+          "hitSample": 2448688,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3901946,
+          "hitSample": 2500638,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2552396,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3927889,
+          "hitSample": 2578276,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3953833,
+          "hitSample": 2604155,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3979776,
+          "hitSample": 2630098,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2656041,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2707927,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2733870,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3992747,
+          "hitSample": 2759814,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4005719,
+          "hitSample": 2785757,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4031662,
+          "hitSample": 2811700,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4057605,
+          "hitSample": 2824696,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4083548,
+          "hitSample": 2837691,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4109491,
+          "hitSample": 2863682,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2889673,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2915665,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2941624,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4135435,
+          "hitSample": 2967583,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2993542,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4161378,
+          "hitSample": 3019501,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4187321,
+          "hitSample": 3071611,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4213264,
+          "hitSample": 3097667,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3123722,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4226236,
+          "hitSample": 3149665,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4239207,
+          "hitSample": 3175608,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3201551,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3227494,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4265150,
+          "hitSample": 3305612,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4291093,
+          "hitSample": 3331651,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4317037,
+          "hitSample": 3357626,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3383601,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4342980,
+          "hitSample": 3409576,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4368923,
+          "hitSample": 3435552,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4394866,
+          "hitSample": 3448523,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3461495,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4407838,
+          "hitSample": 3474466,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4420809,
+          "hitSample": 3487438,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3513381,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3539324,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4446752,
+          "hitSample": 3552240,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4472696,
+          "hitSample": 3565155,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4498639,
+          "hitSample": 3590986,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3603902,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4524582,
+          "hitSample": 3616818,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3642649,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3655596,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3668544,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4550525,
+          "hitSample": 3681491,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3694439,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3720334,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3746229,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4576468,
+          "hitSample": 3772172,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4602411,
+          "hitSample": 3798116,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3824059,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3850002,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4628354,
+          "hitSample": 3862974,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3875945,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3888917,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3901888,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4654298,
+          "hitSample": 3927831,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4667269,
+          "hitSample": 3953775,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4680241,
+          "hitSample": 3979750,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4706184,
+          "hitSample": 4005725,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4732127,
+          "hitSample": 4031700,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4758070,
+          "hitSample": 4057675,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4784013,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4809956,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4835900,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4861843,
+          "hitSample": 4109561,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4887786,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4913729,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4939672,
+          "hitSample": 4135505,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4965615,
+          "hitSample": 4161448,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4213334,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4239277,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4252249,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4265220,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4291163,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4304135,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4317107,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4330078,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4343050,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4368993,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4394952,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4420911,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4446870,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4472830,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4485801,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4498773,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4511744,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4524716,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4550659,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4576602,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4628328,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4654192,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4667123,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4680055,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4705982,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4718945,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4731909,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4744873,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4757836,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4783763,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4887472,
           "kind": "BadTap",
           "laneIndex": 1
         }
-      ],
-      "nestedNotesRemoved": 0,
-      "colorPatternVariantsUsed": 30
+      ]
     },
     {
       "difficulty": "HARD",
-      "targetDensityPercent": 100,
-      "actualDensityPercent": 160.417,
-      "activeBeatCount": 192,
+      "actualDensityPercent": 141.885,
+      "activeBeatCount": 191,
+      "halfBeatAllowed": true,
+      "noteSpeedWorldUnitsPerSecond": 7.9375,
       "colorRunLength": 2,
-      "colorPattern": "audio_seeded_variant_bank",
-      "colorPatternVariantCount": 40,
-      "burstNoteCount": 116,
+      "colorPattern": "equalizer_dominant_band",
+      "burstNoteCount": 80,
       "quarterBurstNoteCount": 0,
-      "wheelWindowSeconds": 9.0,
-      "wheelMinimumGapSeconds": 7.0,
+      "halfBeatSelectionPolicy": "highlight_or_equalizer_rise_or_loudness_rise_or_bps_rise_or_audio_supported_groove",
+      "maximumHalfBeatsPerHighlightBar": 3,
+      "highlightTargetBonus": 2,
+      "halfBeatEligibleBarCount": 26,
+      "halfBeatSelectedBarCount": 38,
+      "halfBeatHighlightNoteCount": 36,
+      "halfBeatEqualizerRiseNoteCount": 25,
+      "halfBeatLoudnessRiseNoteCount": 30,
+      "halfBeatBpsRiseNoteCount": 22,
+      "grooveHalfBeatAllowed": true,
+      "grooveHalfBeatScorePercentile": 78.0,
+      "grooveHalfBeatScoreThreshold": 1.416811,
+      "grooveHalfBeatReliefPercentile": 58.0,
+      "maximumGrooveHalfBeatsPerBar": 1,
+      "maximumMainOnlyBarsBeforeRelief": 2,
+      "grooveHalfBeatEligibleBarCount": 13,
+      "grooveHalfBeatFallbackBarCount": 22,
+      "grooveHalfBeatSelectedNoteCount": 12,
+      "streakReliefHalfBeatCount": 0,
+      "minimumGapSamples": 0,
+      "estimatedBpm": 101.99283,
+      "wheelSelectionPolicy": "audio_score_percentile_with_snowflake_wheel_slot_bias",
+      "wheelScorePercentile": 94.0,
+      "wheelScoreThreshold": 1.802504,
+      "wheelLeadClearanceSamples": 14994,
+      "wheelRecoveryClearanceSamples": 34398,
+      "wheelMainBeatPreservation": true,
+      "wheelClearancePolicy": "preserve_main_beats_clear_half_beats",
+      "wheelNoteCount": 10,
+      "wheelClearanceRemovedCount": 8,
+      "referenceChartKey": "mureka_023",
+      "referenceSongName": "눈꽃 왈츠",
+      "referencePatternApplied": true,
+      "referenceUniquePatternCount": 15,
+      "referencePatternMatchedBarCount": 47,
+      "referencePatternRepositionedBarCount": 7,
+      "finalNoteCount": 271,
+      "bpmBaseCount": 191,
+      "equalizerRemovedCount": 0,
+      "equalizerAddedCount": 36,
+      "bpsRemovedCount": 0,
+      "bpsAddedCount": 44,
+      "loudnessRemovedCount": 0,
+      "loudnessAddedCount": 8,
+      "localBpsMinimum": 1.692557,
+      "localBpsMaximum": 1.707251,
+      "targetNotesPerSecondMinimum": 2.623464,
+      "targetNotesPerSecondMaximum": 2.646239,
+      "pipelineStages": [
+        {
+          "order": 1,
+          "name": "BPM",
+          "added": 191,
+          "removed": 0,
+          "result": 191
+        },
+        {
+          "order": 2,
+          "name": "EQUALIZER",
+          "added": 36,
+          "removed": 0,
+          "result": 227
+        },
+        {
+          "order": 3,
+          "name": "BPS",
+          "added": 44,
+          "removed": 0,
+          "result": 271
+        },
+        {
+          "order": 4,
+          "name": "LOUDNESS",
+          "added": 8,
+          "removed": 0,
+          "result": 279
+        },
+        {
+          "order": 5,
+          "name": "LONG_NOTE_CLEARANCE",
+          "added": 0,
+          "removed": 8,
+          "result": 271
+        },
+        {
+          "order": 6,
+          "name": "SNOWFLAKE_PATTERN",
+          "added": 0,
+          "removed": 0,
+          "result": 271,
+          "repositionedBars": 7
+        }
+      ],
       "notes": [
         {
-          "hitSample": 10474,
+          "hitSample": 9968,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 23445,
+          "hitSample": 22947,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 36417,
+          "hitSample": 35927,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 49388,
+          "hitSample": 61886,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 62360,
+          "hitSample": 87845,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 75332,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 88303,
+          "hitSample": 113804,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 114246,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 127218,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 140189,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 166133,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 179104,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 192076,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 218019,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 230991,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 243962,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 256934,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 269905,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 282877,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 295848,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 321792,
+          "hitSample": 139811,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 347735,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 360706,
+          "hitSample": 165819,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 373678,
+          "hitSample": 191826,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 399621,
+          "hitSample": 217833,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 230773,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 412593,
+          "hitSample": 243712,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 425564,
+          "hitSample": 256652,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 451507,
+          "hitSample": 269591,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 464479,
+          "hitSample": 282531,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 295470,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 321350,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 477450,
+          "hitSample": 347293,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 490422,
+          "hitSample": 373236,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 399179,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 503394,
+          "hitSample": 425122,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 516365,
+          "hitSample": 451065,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 477008,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 529337,
+          "hitSample": 489980,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 542308,
+          "hitSample": 502952,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 515923,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 555280,
+          "hitSample": 528895,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 568251,
+          "hitSample": 541890,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 581223,
+          "hitSample": 554886,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 594195,
+          "hitSample": 567881,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 580877,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 593873,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 607166,
+          "hitSample": 606868,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 633109,
+          "hitSample": 632859,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 646081,
+          "hitSample": 645831,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 659052,
+          "hitSample": 658802,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 672024,
+          "hitSample": 671774,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 684746,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 684996,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 710939,
+          "hitSample": 710689,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 736882,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 762825,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 788768,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 801740,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 814711,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 827683,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 840655,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 853626,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 866598,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 879569,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 892541,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 905512,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 918484,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 944427,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 970370,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 996313,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1009285,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1022257,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1035228,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1048200,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1061171,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1074143,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1100086,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1126029,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1139001,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1151972,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1177915,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1203859,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1216830,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1229802,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1242773,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1255745,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1268717,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1281688,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1294660,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1307631,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1333574,
+          "hitSample": 736632,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 1359518,
+          "hitSample": 762687,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1372489,
+          "hitSample": 788742,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1385461,
+          "hitSample": 801770,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1398432,
+          "hitSample": 814797,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1411404,
+          "hitSample": 827825,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1424375,
+          "hitSample": 840853,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 853856,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 866860,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1437347,
+          "hitSample": 879863,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1463290,
+          "hitSample": 892867,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 905870,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1476262,
+          "hitSample": 918874,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 1489233,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1502205,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1515176,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1528148,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1541120,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1567063,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1580034,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1593006,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1618949,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1644892,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1670835,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1683807,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1696778,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1709750,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1722722,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1735693,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1748665,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1774608,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1800551,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1813523,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1826494,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1839466,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1852437,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1865409,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1878381,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1891352,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1904324,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1917295,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1930267,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1943238,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1956210,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 1982153,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2008096,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2021068,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2034039,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2047011,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2059983,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2085926,
+          "hitSample": 944881,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 2111869,
+          "hitSample": 970824,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2137812,
+          "hitSample": 983796,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 996767,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1009739,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2150784,
+          "hitSample": 1022711,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2163755,
+          "hitSample": 1035682,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1048654,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2176727,
+          "hitSample": 1061577,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2189698,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2215641,
+          "hitSample": 1074501,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2228613,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2241585,
+          "hitSample": 1100348,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2254556,
+          "hitSample": 1126195,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2267528,
+          "hitSample": 1152042,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2280499,
+          "hitSample": 1177985,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2293471,
+          "hitSample": 1203929,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2306443,
+          "hitSample": 1216900,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2319414,
+          "hitSample": 1229872,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1255815,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1268795,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2345357,
+          "hitSample": 1281774,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2371300,
+          "hitSample": 1294754,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1307733,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2384272,
+          "hitSample": 1320713,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2397244,
+          "hitSample": 1333692,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2423187,
+          "hitSample": 1359652,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2449130,
+          "hitSample": 1372623,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1385595,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1398566,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2462101,
+          "hitSample": 1411538,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2475073,
+          "hitSample": 1424509,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1437481,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2501016,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2526959,
+          "hitSample": 1463424,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2539931,
+          "hitSample": 1476396,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2552902,
+          "hitSample": 1489367,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2565874,
+          "hitSample": 1502339,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2578846,
+          "hitSample": 1515310,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1528282,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2604789,
+          "hitSample": 1541254,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2617760,
+          "hitSample": 1567197,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1580120,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2630732,
+          "hitSample": 1593044,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2643703,
+          "hitSample": 1605967,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2656675,
+          "hitSample": 1618891,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2669647,
+          "hitSample": 1631815,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2682618,
+          "hitSample": 1644738,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1670585,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2708561,
+          "hitSample": 1696496,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1722408,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1748319,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2721533,
+          "hitSample": 1774230,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2734504,
+          "hitSample": 1800173,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2747476,
+          "hitSample": 1826116,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2760448,
+          "hitSample": 1852059,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2786391,
+          "hitSample": 1878003,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 1891014,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2799362,
+          "hitSample": 1904026,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2812334,
+          "hitSample": 1930049,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2825306,
+          "hitSample": 1956072,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2838277,
+          "hitSample": 1982095,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2851249,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2864220,
+          "hitSample": 1995067,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2890163,
+          "hitSample": 2008038,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2021010,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2916107,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2942050,
+          "hitSample": 2033981,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2955021,
+          "hitSample": 2046953,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 2967993,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 2993936,
+          "hitSample": 2059925,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3006908,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3019879,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3032851,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3045822,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3058794,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3071765,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3097709,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3110680,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3123652,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3149595,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3162566,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3175538,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3188510,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3201481,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3214453,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3227424,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3253367,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3279311,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3292282,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3305254,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3331197,
+          "hitSample": 2085868,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 3357140,
+          "hitSample": 2111699,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3370112,
+          "hitSample": 2137530,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3383083,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3396055,
+          "hitSample": 2150446,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3409026,
+          "hitSample": 2163361,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3434970,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3460913,
+          "hitSample": 2176277,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3473884,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3486856,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3499827,
+          "hitSample": 2189192,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3512799,
+          "hitSample": 2202164,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3525771,
+          "hitSample": 2215135,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3538742,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3551714,
+          "hitSample": 2228107,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3564685,
+          "hitSample": 2241079,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3577657,
+          "hitSample": 2254050,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3590628,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3603600,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3616572,
+          "hitSample": 2267022,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3642515,
-          "kind": "BadWheelDown",
+          "hitSample": 2292965,
+          "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3668458,
+          "hitSample": 2318908,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3681429,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3694401,
+          "hitSample": 2344851,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3707373,
+          "hitSample": 2370794,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3720344,
+          "hitSample": 2396738,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3746287,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3772230,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3785202,
+          "hitSample": 2422713,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3798174,
+          "hitSample": 2448688,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3811145,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3824117,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3837088,
+          "hitSample": 2474663,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 3850060,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3863032,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3876003,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3888975,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3901946,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3914918,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3927889,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3953833,
-          "kind": "BadWheelDown",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3979776,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 3992747,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4005719,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4018690,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4031662,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4044634,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4057605,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4070577,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4083548,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4096520,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4109491,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4135435,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4161378,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4174349,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4187321,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4200292,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4213264,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4226236,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4239207,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4265150,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4291093,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4304065,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4317037,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4330008,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4342980,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4368923,
+          "hitSample": 2500638,
           "kind": "GoodWheelUp",
           "laneIndex": 1
         },
         {
-          "hitSample": 4394866,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4407838,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4420809,
+          "hitSample": 2526517,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4433781,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4446752,
+          "hitSample": 2552396,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4459724,
-          "kind": "GoodTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4472696,
+          "hitSample": 2565336,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4498639,
+          "hitSample": 2578276,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4511610,
+          "hitSample": 2591215,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4524582,
+          "hitSample": 2604155,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4537553,
+          "hitSample": 2630098,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4550525,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4563497,
+          "hitSample": 2656041,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4576468,
+          "hitSample": 2681984,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4589440,
+          "hitSample": 2707927,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4602411,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4628354,
+          "hitSample": 2720899,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4641326,
+          "hitSample": 2733870,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4654298,
+          "hitSample": 2759814,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2785757,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4667269,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4680241,
+          "hitSample": 2811700,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4706184,
+          "hitSample": 2824696,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4719155,
+          "hitSample": 2837691,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4732127,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4745099,
-          "kind": "BadTap",
-          "laneIndex": 1
-        },
-        {
-          "hitSample": 4758070,
+          "hitSample": 2850687,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4784013,
+          "hitSample": 2863682,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2876678,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2889673,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2915665,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2941624,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2954603,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2967583,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 2993542,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3019501,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3032529,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3045556,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3071611,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3097667,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3123722,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3149665,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3175608,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3201551,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3227494,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3253533,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3279573,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3292592,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3305612,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3331651,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3357626,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3370614,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3383601,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3409576,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3435552,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3448523,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3461495,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3474466,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3487438,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3500409,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3513381,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3539324,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3552240,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3565155,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3578071,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3590986,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3603902,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3616818,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3642649,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3668544,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3694439,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3707387,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3720334,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3733282,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3746229,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3772172,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3785144,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3798116,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3824059,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3850002,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3862974,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3875945,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3888917,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3901888,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3914860,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3927831,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3953775,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3979750,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 3992737,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4005725,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4031700,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4057675,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4083618,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4096590,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4109561,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4135505,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4161448,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4187391,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4213334,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4226306,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4239277,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4252249,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4265220,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4278192,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4291163,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4304135,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4317107,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4330078,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4343050,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4368993,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4394952,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4407932,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4420911,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4446870,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4472830,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4485801,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4498773,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4511744,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4524716,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4537687,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4550659,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4576602,
           "kind": "BadWheelDown",
           "laneIndex": 1
         },
         {
-          "hitSample": 4809956,
+          "hitSample": 4602465,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4628328,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4641260,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4835900,
+          "hitSample": 4654192,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4861843,
+          "hitSample": 4667123,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4874814,
+          "hitSample": 4680055,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4887786,
+          "hitSample": 4693018,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4900758,
+          "hitSample": 4705982,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4913729,
+          "hitSample": 4718945,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4731909,
+          "kind": "GoodTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4744873,
           "kind": "BadTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4926701,
+          "hitSample": 4757836,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4939672,
+          "hitSample": 4783763,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4809690,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4835618,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4861545,
           "kind": "GoodTap",
           "laneIndex": 1
         },
         {
-          "hitSample": 4965615,
+          "hitSample": 4887472,
+          "kind": "GoodWheelUp",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4913415,
+          "kind": "BadTap",
+          "laneIndex": 1
+        },
+        {
+          "hitSample": 4939358,
           "kind": "BadTap",
           "laneIndex": 1
         }
-      ],
-      "colorPatternVariantsUsed": 28
+      ]
     }
   ]
 }

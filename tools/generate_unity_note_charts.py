@@ -26,7 +26,89 @@ FAST_BPS = 2.18
 WHEEL_LEAD_IN_GAP = 0.34
 AUDIBLE_END_RELATIVE_DB = -40.0
 AUDIBLE_END_WINDOW_SECONDS = 0.05
-ENDING_GUARD_SECONDS = AUDIBLE_END_WINDOW_SECONDS
+ENDING_GUARD_SECONDS = 0.12
+HIGH_BPM_THRESHOLD = 149.5
+GENERATOR_VERSION = "bpm_eq_bps_loudness_snowflake_pattern_v8"
+
+ORDERED_PIPELINE_SETTINGS = {
+    "EASY": {
+        "allows_half_beats": False,
+        "eq_main_remove_percentile": 30.0,
+        "eq_half_add_percentile": 101.0,
+        "notes_per_beat": 0.68,
+        "maximum_notes_per_second": 2.15,
+        "minimum_notes_per_bar": 2,
+        "maximum_notes_per_bar": 3,
+        "quiet_loudness": 0.24,
+        "loud_loudness": 0.92,
+        "quiet_remove_count": 1,
+        "color_max_run_length": 4,
+        "half_trigger_minimum": 999.0,
+        "maximum_half_beats_per_highlight_bar": 0,
+        "highlight_target_bonus": 0,
+        "wheel_score_percentile": 98.0,
+        "wheel_lead_clearance_seconds": 0.34,
+        "wheel_recovery_clearance_seconds": 1.20,
+        "note_speed": 5.10,
+    },
+    "NORMAL": {
+        "allows_half_beats": True,
+        "eq_main_remove_percentile": 14.0,
+        "eq_half_add_percentile": 76.0,
+        "notes_per_beat": 1.02,
+        "maximum_notes_per_second": 3.30,
+        "minimum_notes_per_bar": 3,
+        "maximum_notes_per_bar": 6,
+        "quiet_loudness": 0.18,
+        "loud_loudness": 0.76,
+        "quiet_remove_count": 1,
+        "color_max_run_length": 3,
+        "half_trigger_minimum": 1.0,
+        "maximum_half_beats_per_highlight_bar": 2,
+        "highlight_target_bonus": 2,
+        "wheel_score_percentile": 96.0,
+        "wheel_lead_clearance_seconds": 0.34,
+        "wheel_recovery_clearance_seconds": 0.95,
+        "note_speed": 5.66,
+    },
+    "HARD": {
+        "allows_half_beats": True,
+        "allows_groove_half_beats": True,
+        "groove_half_add_percentile": 78.0,
+        "groove_half_relief_percentile": 58.0,
+        "groove_half_minimum_support": 0.13,
+        "groove_half_minimum_pulse": 0.08,
+        "groove_half_minimum_energy": 0.20,
+        "groove_half_fallback_minimum_support": 0.18,
+        "groove_half_fallback_minimum_pulse": 0.10,
+        "groove_half_fallback_minimum_energy": 0.16,
+        "maximum_groove_half_beats_per_bar": 1,
+        "maximum_main_only_bars_before_relief": 2,
+        "eq_main_remove_percentile": 0.0,
+        "eq_half_add_percentile": 52.0,
+        "notes_per_beat": 1.55,
+        "maximum_notes_per_second": 5.20,
+        "minimum_notes_per_bar": 4,
+        "maximum_notes_per_bar": 7,
+        "quiet_loudness": 0.12,
+        "loud_loudness": 0.66,
+        "quiet_remove_count": 0,
+        "color_max_run_length": 2,
+        "half_trigger_minimum": 1.0,
+        "maximum_half_beats_per_highlight_bar": 3,
+        "highlight_target_bonus": 2,
+        "wheel_score_percentile": 94.0,
+        "wheel_lead_clearance_seconds": 0.34,
+        "wheel_recovery_clearance_seconds": 0.78,
+        "preserve_main_beats_around_wheels": True,
+        "note_speed": 7.9375,
+    },
+}
+
+SNOWFLAKE_WALTZ_REFERENCE = {
+    "chart_key": "mureka_023",
+    "song_name": "눈꽃 왈츠",
+}
 
 OUTPUT_NAMES = [
     "bhutan",
@@ -72,6 +154,7 @@ STRICT_V6_BUILD_TIMING = {
         "period_samples": 21689.02,
         "phase_samples": 10254.0,
         "rounding_bias_samples": -1e-7,
+        "lock_tempo": True,
     },
     "midsummer_night_wind": {"period_samples": 19600.416667, "phase_samples": 11331.56},
     "midsummer_night_frequency": {"period_samples": 21452.828333, "phase_samples": 19515.71},
@@ -89,14 +172,14 @@ STRICT_V6_BUILD_TIMING = {
 
 ONBEAT_DIFFICULTY_SETTINGS = {
     "EASY": {
-        "density": 0.75,
+        "density": 0.50,
         "color_max_run_length": 4,
         "wheel_window_seconds": 24.0,
         "wheel_min_gap_seconds": 18.0,
         "wheel_minimum_strength": 0.30,
     },
     "NORMAL": {
-        "density": 1.00,
+        "density": 0.75,
         "color_max_run_length": 3,
         "wheel_window_seconds": 15.0,
         "wheel_min_gap_seconds": 11.0,
@@ -137,8 +220,6 @@ ONBEAT_COLOR_PATTERN_SEEDS = {
         (True, False, True, True, False, False, True, False, True, False),
     ),
 }
-
-HARD_MINIMUM_NOTE_GAP_SECONDS = 0.20
 
 PATTERNS = {
     2: ((0, 4), (0, 2), (0, 6)),
@@ -937,6 +1018,49 @@ def precision_window_values(precision, sample, radius_samples):
     )
 
 
+def precision_window_max(values, precision, sample, radius_samples):
+    center = int(round(sample / precision["hop"]))
+    radius = max(1, int(math.ceil(radius_samples / precision["hop"])))
+    first = max(0, center - radius)
+    last = min(len(values), center + radius + 1)
+    return float(np.max(values[first:last])) if last > first else 0.0
+
+
+def audit_beat_samples(features, precision, beat_samples, sample_rate):
+    active_distances = []
+    peak_samples = precision["peak_samples"]
+    audit_radius = int(round(sample_rate * 0.03))
+    for beat_sample in beat_samples:
+        strength, _ = precision_window_values(
+            precision,
+            beat_sample,
+            audit_radius,
+        )
+        if strength < 0.08 or len(peak_samples) == 0:
+            continue
+        insertion = int(np.searchsorted(peak_samples, beat_sample))
+        distances = []
+        if insertion < len(peak_samples):
+            distances.append(abs(int(peak_samples[insertion]) - beat_sample))
+        if insertion > 0:
+            distances.append(abs(int(peak_samples[insertion - 1]) - beat_sample))
+        if distances:
+            active_distances.append(min(distances))
+
+    features["precision_peak_count"] = int(len(peak_samples))
+    features["strict_grid_active_beat_percent"] = float(
+        len(active_distances) / max(1, len(beat_samples)) * 100.0
+    )
+    features["strict_grid_transient_median_ms"] = float(
+        np.median(active_distances) / sample_rate * 1000.0
+        if active_distances else 0.0
+    )
+    features["strict_grid_transient_p95_ms"] = float(
+        np.percentile(active_distances, 95) / sample_rate * 1000.0
+        if active_distances else 0.0
+    )
+
+
 def strict_grid_positions(phase_samples, period_samples, total_samples):
     first_index = int(math.ceil(-phase_samples / period_samples))
     last_index = int(math.floor((total_samples - 1 - phase_samples) / period_samples))
@@ -1180,12 +1304,19 @@ def adaptive_anchor_alignment_scores(
     return weighted + np.max(values, axis=1) * 0.12 - np.mean(offbeat, axis=1) * 0.09
 
 
-def build_adaptive_anchor_beat_grid(features, precision, total_samples, sample_rate):
+def build_adaptive_anchor_beat_grid(
+    features,
+    precision,
+    total_samples,
+    sample_rate,
+    timing_profile=None,
+):
     strict_beats = build_strict_beat_grid(
         features,
         precision,
         total_samples,
         sample_rate,
+        timing_profile,
     )
     period = float(features["strict_period_samples"])
     phase = float(features["strict_phase_samples"])
@@ -1319,6 +1450,11 @@ def validate_manual_anchor_map(document, sample_rate, total_samples):
         raise ValueError(
             f"Manual anchor sample count mismatch: json={document.get('totalSamples')} clip={total_samples}"
         )
+    beats_per_bar = int(document.get("beatsPerBar", BEATS_PER_BAR))
+    if beats_per_bar != BEATS_PER_BAR:
+        raise ValueError(
+            f"Manual anchor meter mismatch: json={beats_per_bar} expected={BEATS_PER_BAR}"
+        )
     raw_anchors = document.get("anchors") or []
     if not raw_anchors:
         raise ValueError("Manual anchor map has no anchors")
@@ -1337,6 +1473,10 @@ def validate_manual_anchor_map(document, sample_rate, total_samples):
     for anchor in anchors:
         beat_index = anchor["beatIndex"]
         sample = anchor["sample"]
+        if beat_index % beats_per_bar != 0:
+            raise ValueError(
+                f"Manual anchor beat is not a bar boundary: {beat_index}"
+            )
         if beat_index <= previous_beat:
             raise ValueError(f"Duplicate or reversed manual beat index: {beat_index}")
         if sample <= previous_sample or sample < 0 or sample >= total_samples:
@@ -1346,10 +1486,23 @@ def validate_manual_anchor_map(document, sample_rate, total_samples):
     return anchors
 
 
-def build_manual_beat_grid(features, precision, total_samples, sample_rate, document):
+def build_manual_beat_grid(
+    features,
+    precision,
+    total_samples,
+    sample_rate,
+    document,
+    timing_profile=None,
+):
     anchors = validate_manual_anchor_map(document, sample_rate, total_samples)
     if len(anchors) == 1:
-        build_strict_beat_grid(features, precision, total_samples, sample_rate)
+        build_strict_beat_grid(
+            features,
+            precision,
+            total_samples,
+            sample_rate,
+            timing_profile,
+        )
         fallback_period = float(features["strict_period_samples"])
     else:
         fallback_period = (
@@ -1886,33 +2039,84 @@ def build_onbeat_candidates(
     total_samples,
     sample_rate,
     timing_profile=None,
+    manual_anchor_map=None,
 ):
-    beat_samples = build_strict_beat_grid(
-        features,
-        precision,
-        total_samples,
-        sample_rate,
-        timing_profile,
-    )
-    period_samples = float(features["strict_period_samples"])
-    phase_samples = float(features["strict_phase_samples"])
+    if manual_anchor_map is not None:
+        beat_samples, sample_at_beat = build_manual_beat_grid(
+            features,
+            precision,
+            total_samples,
+            sample_rate,
+            manual_anchor_map,
+            timing_profile,
+        )
+        features["beat_grid_mode"] = "manual_anchors"
+    elif timing_profile is not None and timing_profile.get("lock_tempo", False):
+        beat_samples = build_strict_beat_grid(
+            features,
+            precision,
+            total_samples,
+            sample_rate,
+            timing_profile,
+        )
+        period_samples = float(features["strict_period_samples"])
+        phase_samples = float(features["strict_phase_samples"])
+        sample_at_beat = lambda beat_position: (
+            phase_samples + beat_position * period_samples
+        )
+        features["auto_timing_anchors"] = []
+        features["adaptive_offset_p95_ms"] = 0.0
+        features["beat_grid_mode"] = "constant"
+    else:
+        beat_samples, sample_at_beat = build_adaptive_anchor_beat_grid(
+            features,
+            precision,
+            total_samples,
+            sample_rate,
+            timing_profile,
+        )
+        features["beat_grid_mode"] = "adaptive_bar_anchors"
+
+    audit_beat_samples(features, precision, beat_samples, sample_rate)
+
+    local_bps = []
+    fallback_period = max(1.0, float(features["strict_period_samples"]))
+    for beat_index in range(len(beat_samples)):
+        neighboring_periods = []
+        if beat_index > 0:
+            neighboring_periods.append(
+                beat_samples[beat_index] - beat_samples[beat_index - 1]
+            )
+        if beat_index + 1 < len(beat_samples):
+            neighboring_periods.append(
+                beat_samples[beat_index + 1] - beat_samples[beat_index]
+            )
+        local_period = (
+            float(np.median(neighboring_periods))
+            if neighboring_periods
+            else fallback_period
+        )
+        local_bps.append(sample_rate / max(1.0, local_period))
+
     candidates = []
     grid_samples = []
     for beat_index, beat_sample in enumerate(beat_samples):
         for subdivision in (0, 2):
             if subdivision == 0:
                 sample = int(beat_sample)
-                if sample < 0 or sample >= total_samples:
-                    continue
             else:
-                expected_sample = phase_samples + (
-                    beat_index + subdivision / 4.0
-                ) * period_samples
-                if expected_sample >= total_samples:
-                    continue
-                sample = int(clamp(round(expected_sample), 0, total_samples - 1))
+                sample = int(round(sample_at_beat(beat_index + 0.5)))
+            if sample < 0 or sample >= total_samples:
+                continue
+
             grid_samples.append(sample)
             strength, energy = precision_window_values(
+                precision,
+                sample,
+                int(round(0.028 * sample_rate)),
+            )
+            low_strength = precision_window_max(
+                precision["low_onset"],
                 precision,
                 sample,
                 int(round(0.028 * sample_rate)),
@@ -1920,370 +2124,1414 @@ def build_onbeat_candidates(
             beat_in_bar = beat_index % BEATS_PER_BAR
             accent_bonus = 0.0
             if subdivision == 0:
-                accent_bonus = 0.12 if beat_in_bar == 0 else 0.05 if beat_in_bar == 2 else 0.0
-            elif subdivision == 2:
+                accent_bonus = (
+                    0.12
+                    if beat_in_bar == 0
+                    else 0.05 if beat_in_bar == 2 else 0.0
+                )
+            else:
                 accent_bonus = 0.025
             candidates.append({
                 "hitSample": sample,
                 "beatIndex": beat_index,
                 "subdivision": subdivision,
+                "localBps": float(local_bps[beat_index]),
                 "strength": strength,
+                "lowStrength": low_strength,
                 "energy": energy,
                 "score": strength * 0.72 + energy * 0.28 + accent_bonus,
             })
     return candidates, beat_samples, sorted(set(grid_samples))
 
 
-def apply_onbeat_color_patterns(chart, candidates):
-    difficulty = chart["difficulty"]
-    pattern_bank = ONBEAT_COLOR_PATTERN_BANKS[difficulty]
-    maximum_run = ONBEAT_DIFFICULTY_SETTINGS[difficulty][
-        "color_max_run_length"
-    ]
-    candidate_by_sample = {
-        candidate["hitSample"]: candidate
-        for candidate in candidates
-    }
-    candidates_by_bar = {}
-    for note in chart["notes"]:
-        candidate = candidate_by_sample[note["hitSample"]]
-        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
-        candidates_by_bar.setdefault(bar_index, []).append(candidate)
-
-    bar_patterns = {}
-    previous_pattern_index = -1
-    used_pattern_indices = set()
-    for bar_index in sorted(candidates_by_bar):
-        bar_candidates = candidates_by_bar[bar_index]
-        signature = 0
-        for index, candidate in enumerate(bar_candidates):
-            strength = int(round(candidate["strength"] * 1000.0))
-            energy = int(round(candidate["energy"] * 1000.0))
-            signature += (index + 1) * (
-                strength * 31
-                + energy * 17
-                + (candidate["subdivision"] + 1) * 97
-            )
-        pattern_index = (
-            bar_index * 37
-            + (bar_index // 4) * 53
-            + signature
-        ) % len(pattern_bank)
-        if pattern_index == previous_pattern_index and len(pattern_bank) > 1:
-            pattern_index = (
-                pattern_index + 1 + signature % (len(pattern_bank) - 1)
-            ) % len(pattern_bank)
-        pattern = pattern_bank[pattern_index]
-        phase = (
-            bar_index * 11 + signature // max(1, len(pattern_bank))
-        ) % len(pattern)
-        bar_patterns[bar_index] = (pattern, phase)
-        previous_pattern_index = pattern_index
-        used_pattern_indices.add(pattern_index)
-
-    previous_good = None
-    run_length = 0
-    local_indices = {}
-    for note in chart["notes"]:
-        candidate = candidate_by_sample[note["hitSample"]]
-        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
-        local_index = local_indices.get(bar_index, 0)
-        pattern, phase = bar_patterns[bar_index]
-        good = pattern[(local_index + phase) % len(pattern)]
-        if good == previous_good and run_length >= maximum_run:
-            good = not good
-
-        run_length = run_length + 1 if good == previous_good else 1
-        previous_good = good
-        local_indices[bar_index] = local_index + 1
-        is_wheel = "Wheel" in note["kind"]
-        if is_wheel:
-            note["kind"] = "GoodWheelUp" if good else "BadWheelDown"
-        else:
-            note["kind"] = "GoodTap" if good else "BadTap"
-
-    chart["colorRunLength"] = maximum_run
-    chart["colorPattern"] = "audio_seeded_variant_bank"
-    chart["colorPatternVariantCount"] = len(pattern_bank)
-    chart["colorPatternVariantsUsed"] = len(used_pattern_indices)
-
-
-def choose_onbeat_wheel_indices(selected, settings, sample_rate):
-    if not selected:
-        return set()
-
-    wheel_window_samples = int(round(settings["wheel_window_seconds"] * sample_rate))
-    minimum_gap_samples = int(round(settings["wheel_min_gap_seconds"] * sample_rate))
-    first_window_sample = selected[0]["hitSample"] + int(round(4.0 * sample_rate))
-    last_window_sample = selected[-1]["hitSample"] - int(round(2.0 * sample_rate))
-    minimum_strength = settings["wheel_minimum_strength"]
-    chosen = set()
-    last_wheel_sample = -minimum_gap_samples
-
-    window_start = first_window_sample
-    while window_start <= last_window_sample:
-        window_end = min(last_window_sample + 1, window_start + wheel_window_samples)
-        eligible = [
-            (index, candidate)
-            for index, candidate in enumerate(selected)
-            if window_start <= candidate["hitSample"] < window_end
-            and candidate["subdivision"] == 0
-            and candidate["hitSample"] - last_wheel_sample >= minimum_gap_samples
-            and candidate["strength"] >= minimum_strength
-        ]
-        if eligible:
-            index, candidate = max(
-                eligible,
-                key=lambda item: item[1]["strength"] * 0.68
-                + item[1]["energy"] * 0.22
-                + (0.10 if item[1]["beatIndex"] % BEATS_PER_BAR == 0 else 0.0),
-            )
-            chosen.add(index)
-            last_wheel_sample = candidate["hitSample"]
-        window_start += wheel_window_samples
-    return chosen
-
-
-def select_taiko_hard_extras(candidates, active_bar_indices):
-    candidates_by_bar = {}
+def analyze_candidate_equalizer(audio, sample_rate, candidates):
+    del audio, sample_rate
     for candidate in candidates:
-        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
-        if bar_index in active_bar_indices:
-            candidates_by_bar.setdefault(bar_index, []).append(candidate)
-
-    extras = []
-    for bar_index in sorted(active_bar_indices):
-        bar_candidates = candidates_by_bar.get(bar_index, [])
-        main_candidates = [
-            candidate for candidate in bar_candidates
-            if candidate["subdivision"] == 0
-        ]
-        half_candidates = [
-            candidate for candidate in bar_candidates
-            if candidate["subdivision"] == 2
-        ]
-        if not main_candidates or not half_candidates:
-            continue
-
-        mean_energy = float(np.mean([
-            candidate["energy"] for candidate in main_candidates
-        ]))
-        peak_strength = max(
-            candidate["strength"] for candidate in bar_candidates
+        low_pulse = float(candidate["lowStrength"])
+        broad_pulse = float(candidate["strength"])
+        loudness = float(candidate["energy"])
+        upper_pulse = max(0.0, broad_pulse - low_pulse * 0.58)
+        middle_pulse = max(0.0, broad_pulse * 0.82 - low_pulse * 0.18)
+        band_flux = (low_pulse, middle_pulse, upper_pulse)
+        band_energy = (
+            loudness * (0.58 + low_pulse * 0.20),
+            loudness * (0.68 + middle_pulse * 0.16),
+            loudness * (0.48 + upper_pulse * 0.22),
         )
-        half_target = 1
-        if mean_energy >= 0.85 or peak_strength >= 1.00:
-            half_target += 1
-        if mean_energy >= 1.20 and peak_strength >= 1.35:
-            half_target += 1
-        selected_halves = sorted(
-            half_candidates,
-            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
-            reverse=True,
-        )[: min(half_target, len(half_candidates))]
-        extras.extend(selected_halves)
-    return extras
-
-
-def select_normal_accent_extras(candidates, active_bar_indices):
-    candidates_by_bar = {}
-    for candidate in candidates:
-        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
-        if bar_index in active_bar_indices:
-            candidates_by_bar.setdefault(bar_index, []).append(candidate)
-
-    extras = []
-    last_accent_bar = -100
-    for bar_index in sorted(active_bar_indices):
-        if bar_index - last_accent_bar < 2:
-            continue
-        bar_candidates = candidates_by_bar.get(bar_index, [])
-        main_candidates = [
-            candidate for candidate in bar_candidates
-            if candidate["subdivision"] == 0
-        ]
-        half_candidates = [
-            candidate for candidate in bar_candidates
-            if candidate["subdivision"] == 2
-            and candidate["strength"] >= 0.08
-        ]
-        if not main_candidates or not half_candidates:
-            continue
-
-        mean_energy = float(np.mean([
-            candidate["energy"] for candidate in main_candidates
-        ]))
-        peak_strength = max(
-            candidate["strength"] for candidate in bar_candidates
+        equalizer_flux = (
+            low_pulse * 0.46
+            + middle_pulse * 0.34
+            + upper_pulse * 0.20
         )
-        if mean_energy < 0.88 and peak_strength < 1.05:
-            continue
-
-        extras.append(max(
-            half_candidates,
-            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
+        equalizer_energy = loudness
+        support = (
+            equalizer_flux * 0.52
+            + equalizer_energy * 0.23
+            + candidate["strength"] * 0.17
+            + candidate["energy"] * 0.08
+        )
+        dominant_band = int(np.argmax(
+            np.asarray(band_flux) * 0.72 + np.asarray(band_energy) * 0.28
         ))
-        last_accent_bar = bar_index
-    return extras
+        candidate["eqBandEnergy"] = tuple(float(value) for value in band_energy)
+        candidate["eqBandFlux"] = tuple(float(value) for value in band_flux)
+        candidate["eqFlux"] = equalizer_flux
+        candidate["eqEnergy"] = equalizer_energy
+        candidate["eqSupport"] = float(support)
+        candidate["dominantBand"] = dominant_band
 
 
-def select_onbeat_difficulty_chart(candidates, difficulty, sample_rate):
-    settings = ONBEAT_DIFFICULTY_SETTINGS[difficulty]
+def annotate_pipeline_highlights(candidates):
+    bars = {}
+    for candidate in candidates:
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        bars.setdefault(bar_index, []).append(candidate)
+
+    records = []
+    for bar_index in sorted(bars):
+        main_candidates = [
+            candidate for candidate in bars[bar_index]
+            if candidate["subdivision"] == 0
+        ]
+        if not main_candidates:
+            continue
+        records.append({
+            "barIndex": bar_index,
+            "candidates": bars[bar_index],
+            "equalizer": float(
+                np.mean([candidate["eqSupport"] for candidate in main_candidates]) * 0.62
+                + max(candidate["eqSupport"] for candidate in main_candidates) * 0.38
+            ),
+            "loudness": float(
+                np.mean([candidate["energy"] for candidate in main_candidates]) * 0.62
+                + max(candidate["energy"] for candidate in main_candidates) * 0.38
+            ),
+            "transient": float(
+                np.mean([candidate["strength"] for candidate in main_candidates]) * 0.55
+                + max(candidate["strength"] for candidate in main_candidates) * 0.45
+            ),
+            "bps": float(np.median([
+                candidate["localBps"] for candidate in main_candidates
+            ])),
+        })
+
+    if not records:
+        return {
+            "barCount": 0,
+            "highlightBarCount": 0,
+            "equalizerRiseBarCount": 0,
+            "loudnessRiseBarCount": 0,
+            "bpsRiseBarCount": 0,
+            "anyTriggerBarCount": 0,
+        }
+
+    equalizer_values = np.asarray(
+        [record["equalizer"] for record in records], dtype=np.float64
+    )
+    loudness_values = np.asarray(
+        [record["loudness"] for record in records], dtype=np.float64
+    )
+    transient_values = np.asarray(
+        [record["transient"] for record in records], dtype=np.float64
+    )
+    bps_values = np.asarray(
+        [record["bps"] for record in records], dtype=np.float64
+    )
+    equalizer_rises = np.zeros(len(records), dtype=np.float64)
+    loudness_rises = np.zeros(len(records), dtype=np.float64)
+    bps_rises = np.zeros(len(records), dtype=np.float64)
+    for index in range(1, len(records)):
+        baseline_start = max(0, index - 2)
+        equalizer_baseline = float(np.mean(equalizer_values[baseline_start:index]))
+        loudness_baseline = float(np.mean(loudness_values[baseline_start:index]))
+        bps_baseline = float(np.mean(bps_values[baseline_start:index]))
+        equalizer_rises[index] = max(
+            0.0, equalizer_values[index] - equalizer_baseline
+        )
+        loudness_rises[index] = max(
+            0.0, loudness_values[index] - loudness_baseline
+        )
+        bps_rises[index] = max(
+            0.0,
+            (bps_values[index] - bps_baseline) / max(0.01, bps_baseline),
+        )
+
+    highlight_scores = (
+        normalize_feature(equalizer_values, 90.0) * 0.32
+        + normalize_feature(loudness_values, 90.0) * 0.38
+        + normalize_feature(transient_values, 90.0) * 0.20
+        + normalize_feature(bps_values, 90.0) * 0.10
+    )
+
+    def positive_rise_threshold(values, percentile, minimum):
+        positive = values[values > 1e-9]
+        if len(positive) == 0:
+            return float("inf")
+        return max(minimum, float(np.percentile(positive, percentile)))
+
+    highlight_threshold = max(
+        1e-6, float(np.percentile(highlight_scores, 72.0))
+    )
+    equalizer_rise_threshold = positive_rise_threshold(
+        equalizer_rises, 60.0, 0.030
+    )
+    loudness_rise_threshold = positive_rise_threshold(
+        loudness_rises, 60.0, 0.034
+    )
+    bps_rise_threshold = positive_rise_threshold(
+        bps_rises, 55.0, 0.0012
+    )
+
+    reason_counts = {
+        "highlight": 0,
+        "equalizer": 0,
+        "loudness": 0,
+        "bps": 0,
+        "any": 0,
+    }
+    for index, record in enumerate(records):
+        highlight_trigger = highlight_scores[index] >= highlight_threshold
+        equalizer_trigger = equalizer_rises[index] >= equalizer_rise_threshold
+        loudness_trigger = loudness_rises[index] >= loudness_rise_threshold
+        bps_trigger = bps_rises[index] >= bps_rise_threshold
+        ratios = [highlight_scores[index] / highlight_threshold]
+        ratios.append(
+            equalizer_rises[index] / equalizer_rise_threshold
+            if np.isfinite(equalizer_rise_threshold) else 0.0
+        )
+        ratios.append(
+            loudness_rises[index] / loudness_rise_threshold
+            if np.isfinite(loudness_rise_threshold) else 0.0
+        )
+        ratios.append(
+            bps_rises[index] / bps_rise_threshold
+            if np.isfinite(bps_rise_threshold) else 0.0
+        )
+        trigger_score = float(max(ratios))
+        any_trigger = (
+            highlight_trigger
+            or equalizer_trigger
+            or loudness_trigger
+            or bps_trigger
+        )
+        reason_counts["highlight"] += int(highlight_trigger)
+        reason_counts["equalizer"] += int(equalizer_trigger)
+        reason_counts["loudness"] += int(loudness_trigger)
+        reason_counts["bps"] += int(bps_trigger)
+        reason_counts["any"] += int(any_trigger)
+        for candidate in record["candidates"]:
+            candidate["highlightScore"] = float(highlight_scores[index])
+            candidate["halfBeatTriggerScore"] = trigger_score
+            candidate["highlightTrigger"] = bool(highlight_trigger)
+            candidate["equalizerRiseTrigger"] = bool(equalizer_trigger)
+            candidate["loudnessRiseTrigger"] = bool(loudness_trigger)
+            candidate["bpsRiseTrigger"] = bool(bps_trigger)
+
+    return {
+        "barCount": len(records),
+        "highlightBarCount": reason_counts["highlight"],
+        "equalizerRiseBarCount": reason_counts["equalizer"],
+        "loudnessRiseBarCount": reason_counts["loudness"],
+        "bpsRiseBarCount": reason_counts["bps"],
+        "anyTriggerBarCount": reason_counts["any"],
+        "highlightThreshold": round(highlight_threshold, 6),
+        "equalizerRiseThreshold": round(equalizer_rise_threshold, 6)
+        if np.isfinite(equalizer_rise_threshold) else 0.0,
+        "loudnessRiseThreshold": round(loudness_rise_threshold, 6)
+        if np.isfinite(loudness_rise_threshold) else 0.0,
+        "bpsRiseThreshold": round(bps_rise_threshold, 6)
+        if np.isfinite(bps_rise_threshold) else 0.0,
+    }
+
+
+def estimate_onbeat_bpm(candidates, sample_rate):
+    main_candidates = sorted(
+        (
+            candidate
+            for candidate in candidates
+            if candidate["subdivision"] == 0
+        ),
+        key=lambda candidate: candidate["beatIndex"],
+    )
+    periods = []
+    for first, second in zip(main_candidates, main_candidates[1:]):
+        beat_delta = second["beatIndex"] - first["beatIndex"]
+        sample_delta = second["hitSample"] - first["hitSample"]
+        if beat_delta > 0 and sample_delta > 0:
+            periods.append(sample_delta / beat_delta)
+    if not periods:
+        return 0.0
+    return 60.0 * sample_rate / float(np.median(periods))
+
+
+def pipeline_bps_priority(candidate):
+    main_beat_bonus = 0.38 if candidate["subdivision"] == 0 else 0.0
+    beat_in_bar = candidate["beatIndex"] % BEATS_PER_BAR
+    accent_bonus = 0.24 if beat_in_bar == 0 else 0.09 if beat_in_bar == 2 else 0.0
+    return (
+        candidate["eqSupport"] * 0.66
+        + candidate["eqFlux"] * 0.18
+        + candidate["strength"] * 0.16
+        + main_beat_bonus
+        + accent_bonus
+    )
+
+
+def pipeline_loudness_priority(candidate):
+    main_beat_bonus = 0.24 if candidate["subdivision"] == 0 else 0.0
+    downbeat_bonus = (
+        0.18
+        if candidate["subdivision"] == 0
+        and candidate["beatIndex"] % BEATS_PER_BAR == 0
+        else 0.0
+    )
+    return (
+        candidate["energy"] * 0.52
+        + candidate["eqSupport"] * 0.34
+        + candidate["strength"] * 0.14
+        + main_beat_bonus
+        + downbeat_bonus
+    )
+
+
+def pipeline_target_count(settings, bar_candidates, highlight_active=False):
     main_candidates = [
-        candidate for candidate in candidates
+        candidate for candidate in bar_candidates
         if candidate["subdivision"] == 0
     ]
-    selected = []
-    active_beat_count = 0
-    active_bar_indices = set()
-    for bar_start in range(0, len(main_candidates), BEATS_PER_BAR):
-        bar_candidates = main_candidates[bar_start : bar_start + BEATS_PER_BAR]
-        if not bar_candidates:
-            continue
-        if (
-            max(candidate["strength"] for candidate in bar_candidates) < 0.06
-            and max(candidate["energy"] for candidate in bar_candidates) < 0.08
+    if not main_candidates:
+        return 0, 0.0, 0.0
+    local_bps = float(np.median([
+        candidate["localBps"] for candidate in main_candidates
+    ]))
+    bar_beats = len(main_candidates)
+    target_nps = min(
+        settings["maximum_notes_per_second"],
+        local_bps * settings["notes_per_beat"],
+    )
+    bar_duration = bar_beats / max(0.01, local_bps)
+    target = int(round(target_nps * bar_duration))
+    if highlight_active:
+        target += int(settings["highlight_target_bonus"])
+    minimum = int(math.ceil(
+        settings["minimum_notes_per_bar"] * bar_beats / BEATS_PER_BAR
+    ))
+    maximum = int(math.ceil(
+        settings["maximum_notes_per_bar"] * bar_beats / BEATS_PER_BAR
+    ))
+    target = int(clamp(target, minimum, maximum))
+    return target, local_bps, target_nps
+
+
+def pipeline_wheel_score(candidate):
+    return (
+        candidate["eqFlux"] * 0.34
+        + candidate["energy"] * 0.31
+        + candidate["eqSupport"] * 0.20
+        + candidate["strength"] * 0.10
+        + min(2.0, candidate.get("halfBeatTriggerScore", 0.0)) * 0.05
+        + (
+            0.10
+            if candidate["beatIndex"] % BEATS_PER_BAR == 0
+            else 0.0
+        )
+    )
+
+
+def build_snowflake_pattern_profile(beat_samples, charts):
+    sample_slots = {}
+    for beat_index, sample in enumerate(beat_samples):
+        sample_slots[int(sample)] = (
+            beat_index // BEATS_PER_BAR,
+            (beat_index % BEATS_PER_BAR) * 2,
+        )
+        if beat_index + 1 < len(beat_samples):
+            half_sample = midpoint_sample(sample, beat_samples[beat_index + 1])
+            sample_slots[int(half_sample)] = (
+                beat_index // BEATS_PER_BAR,
+                (beat_index % BEATS_PER_BAR) * 2 + 1,
+            )
+
+    bar_count = int(math.ceil(len(beat_samples) / BEATS_PER_BAR))
+    profile = {}
+    for chart in charts:
+        masks = [0] * bar_count
+        wheel_slot_counts = {}
+        for note in chart["notes"]:
+            location = sample_slots.get(int(note["hitSample"]))
+            if location is None:
+                continue
+            bar_index, slot = location
+            masks[bar_index] |= 1 << slot
+            if "Wheel" in note.get("kind", ""):
+                wheel_slot_counts[slot] = wheel_slot_counts.get(slot, 0) + 1
+
+        mask_counts = {}
+        masks_by_count = {}
+        for mask in masks:
+            mask_counts[mask] = mask_counts.get(mask, 0) + 1
+        for mask, frequency in mask_counts.items():
+            masks_by_count.setdefault(mask.bit_count(), []).append(
+                (mask, frequency)
+            )
+        for patterns in masks_by_count.values():
+            patterns.sort(key=lambda item: (-item[1], item[0]))
+
+        transition_counts = {}
+        for first, second in zip(masks, masks[1:]):
+            key = (first, second)
+            transition_counts[key] = transition_counts.get(key, 0) + 1
+        maximum_wheel_frequency = max(wheel_slot_counts.values(), default=1)
+        profile[chart["difficulty"]] = {
+            "masks_by_count": masks_by_count,
+            "transition_counts": transition_counts,
+            "wheel_slot_weights": {
+                slot: count / maximum_wheel_frequency
+                for slot, count in wheel_slot_counts.items()
+            },
+            "bar_count": bar_count,
+            "unique_pattern_count": len(mask_counts),
+        }
+    return profile
+
+
+def pipeline_wheel_rank_score(candidate, wheel_slot_weights=None):
+    slot = (candidate["beatIndex"] % BEATS_PER_BAR) * 2
+    reference_bonus = (
+        wheel_slot_weights.get(slot, 0.0) * 0.12
+        if wheel_slot_weights else 0.0
+    )
+    return pipeline_wheel_score(candidate) + reference_bonus
+
+
+def choose_pipeline_wheel_samples(
+    selected,
+    settings,
+    sample_rate,
+    wheel_slot_weights=None,
+):
+    selected = sorted(selected, key=lambda candidate: candidate["hitSample"])
+    if len(selected) < 3:
+        return set(), selected, 0, 0.0, []
+
+    lead_clearance = int(round(
+        settings["wheel_lead_clearance_seconds"] * sample_rate
+    ))
+    recovery_clearance = int(round(
+        settings["wheel_recovery_clearance_seconds"] * sample_rate
+    ))
+    first_sample = selected[0]["hitSample"]
+    last_sample = selected[-1]["hitSample"]
+    eligible = [
+        candidate for candidate in selected
+        if candidate["subdivision"] == 0
+        and candidate["eqSupport"] >= 0.28
+        and candidate["energy"] >= 0.20
+        and candidate["hitSample"] - first_sample >= lead_clearance
+        and last_sample - candidate["hitSample"] >= recovery_clearance
+    ]
+    if not eligible:
+        return set(), selected, 0, 0.0, []
+
+    scores = np.asarray(
+        [
+            pipeline_wheel_rank_score(candidate, wheel_slot_weights)
+            for candidate in eligible
+        ],
+        dtype=np.float64,
+    )
+    score_threshold = float(np.percentile(
+        scores,
+        settings["wheel_score_percentile"],
+    ))
+    ranked = sorted(
+        (
+            candidate for candidate in eligible
+            if pipeline_wheel_rank_score(candidate, wheel_slot_weights)
+            >= score_threshold
+        ),
+        key=lambda candidate: pipeline_wheel_rank_score(
+            candidate,
+            wheel_slot_weights,
+        ),
+        reverse=True,
+    )
+
+    wheel_samples = set()
+    reserved_intervals = []
+    for candidate in ranked:
+        sample = candidate["hitSample"]
+        interval = (sample - lead_clearance, sample + recovery_clearance)
+        if any(
+            interval[0] < reserved_end and interval[1] > reserved_start
+            for reserved_start, reserved_end in reserved_intervals
         ):
             continue
+        wheel_samples.add(sample)
+        reserved_intervals.append(interval)
 
-        active_beat_count += len(bar_candidates)
-        active_bar_indices.add(bar_candidates[0]["beatIndex"] // BEATS_PER_BAR)
-        target = max(1, int(math.ceil(len(bar_candidates) * settings["density"])))
-        ranked = sorted(
-            bar_candidates,
-            key=lambda candidate: (candidate["score"], -candidate["beatIndex"]),
-            reverse=True,
-        )
-        selected.extend(ranked[:target])
-
-    burst_note_count = 0
-    if difficulty == "NORMAL":
-        selected.extend(select_normal_accent_extras(
-            candidates,
-            active_bar_indices,
-        ))
-    elif difficulty == "HARD":
-        hard_extras = select_taiko_hard_extras(candidates, active_bar_indices)
-        selected.extend(hard_extras)
-
-    selected.sort(key=lambda candidate: candidate["hitSample"])
-    wheel_indices = choose_onbeat_wheel_indices(selected, settings, sample_rate)
-    wheel_samples = {
-        selected[index]["hitSample"] for index in wheel_indices
-    }
-    if difficulty in ("NORMAL", "HARD") and wheel_samples:
-        wheel_lead_seconds = 0.34 if difficulty == "HARD" else 0.30
-        wheel_recovery_seconds = 0.42 if difficulty == "HARD" else 0.36
-        wheel_lead_samples = int(round(wheel_lead_seconds * sample_rate))
-        wheel_recovery_samples = int(round(wheel_recovery_seconds * sample_rate))
-        selected = [
-            candidate
-            for candidate in selected
-            if candidate["subdivision"] == 0
-            or all(
-                candidate["hitSample"] <= wheel_sample - wheel_lead_samples
-                or candidate["hitSample"] >= wheel_sample + wheel_recovery_samples
-                for wheel_sample in wheel_samples
-            )
-        ]
-    if difficulty == "HARD":
-        minimum_gap_samples = int(round(
-            HARD_MINIMUM_NOTE_GAP_SECONDS * sample_rate
-        ))
-        spaced = []
-        for candidate in selected:
-            if (
-                not spaced
-                or candidate["hitSample"] - spaced[-1]["hitSample"]
-                >= minimum_gap_samples
-            ):
-                spaced.append(candidate)
-        selected = spaced
-    burst_note_count = sum(
-        candidate["subdivision"] > 0 for candidate in selected
-    )
-    quarter_burst_note_count = sum(
-        candidate["subdivision"] in (1, 3) for candidate in selected
-    )
-    notes = []
+    kept = []
+    removed_count = 0
     for candidate in selected:
+        sample = candidate["hitSample"]
+        if sample in wheel_samples:
+            kept.append(candidate)
+            continue
+        if (
+            settings.get("preserve_main_beats_around_wheels", False)
+            and candidate["subdivision"] == 0
+        ):
+            kept.append(candidate)
+            continue
+        if any(
+            reserved_start < sample < reserved_end
+            for reserved_start, reserved_end in reserved_intervals
+        ):
+            removed_count += 1
+            continue
+        kept.append(candidate)
+    if wheel_samples:
+        score_threshold = min(
+            pipeline_wheel_rank_score(candidate, wheel_slot_weights)
+            for candidate in eligible
+            if candidate["hitSample"] in wheel_samples
+        )
+    return (
+        wheel_samples,
+        kept,
+        removed_count,
+        score_threshold,
+        reserved_intervals,
+    )
+
+
+def apply_snowflake_pattern_grammar(
+    selected,
+    candidate_pool,
+    wheel_samples,
+    reserved_intervals,
+    pattern_profile,
+    preserve_main_beats_around_wheels=False,
+):
+    selected_by_sample = {
+        candidate["hitSample"]: candidate for candidate in selected
+    }
+    selected_by_bar = {}
+    for candidate in selected_by_sample.values():
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        selected_by_bar.setdefault(bar_index, []).append(candidate)
+
+    candidates_by_bar_slot = {}
+    for candidate in candidate_pool:
+        sample = candidate["hitSample"]
+        inside_wheel_clearance = any(
+            start < sample < end for start, end in reserved_intervals
+        )
+        if (
+            sample not in wheel_samples
+            and inside_wheel_clearance
+            and not (
+                preserve_main_beats_around_wheels
+                and candidate["subdivision"] == 0
+                and sample in selected_by_sample
+            )
+        ):
+            continue
+        if not (
+            sample in selected_by_sample
+            or sample in wheel_samples
+            or candidate["energy"] >= 0.055
+            or candidate["eqSupport"] >= 0.10
+            or candidate["strength"] >= 0.08
+        ):
+            continue
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        slot = (candidate["beatIndex"] % BEATS_PER_BAR) * 2
+        if candidate["subdivision"] == 2:
+            slot += 1
+        candidates_by_bar_slot.setdefault(bar_index, {})[slot] = candidate
+
+    matched_bar_count = 0
+    repositioned_bar_count = 0
+    previous_mask = None
+    for bar_index in sorted(selected_by_bar):
+        current_candidates = selected_by_bar[bar_index]
+        target_count = len(current_candidates)
+        if target_count <= 0:
+            continue
+        slot_candidates = candidates_by_bar_slot.get(bar_index, {})
+        current_mask = 0
+        protected_wheel_mask = 0
+        for candidate in current_candidates:
+            slot = (candidate["beatIndex"] % BEATS_PER_BAR) * 2
+            if candidate["subdivision"] == 2:
+                slot += 1
+            current_mask |= 1 << slot
+            if (
+                candidate["hitSample"] in wheel_samples
+                or (
+                    preserve_main_beats_around_wheels
+                    and candidate["subdivision"] == 0
+                    and any(
+                        start < candidate["hitSample"] < end
+                        for start, end in reserved_intervals
+                    )
+                )
+            ):
+                protected_wheel_mask |= 1 << slot
+
+        patterns = pattern_profile["masks_by_count"].get(target_count, [])
+        valid_patterns = []
+        for mask, frequency in patterns:
+            if mask & protected_wheel_mask != protected_wheel_mask:
+                continue
+            slots = [slot for slot in range(8) if mask & (1 << slot)]
+            if all(slot in slot_candidates for slot in slots):
+                valid_patterns.append((mask, frequency, slots))
+        if not valid_patterns:
+            previous_mask = current_mask
+            continue
+
+        raw_slot_scores = {
+            slot: (
+                pipeline_bps_priority(candidate) * 0.58
+                + pipeline_loudness_priority(candidate) * 0.42
+            )
+            for slot, candidate in slot_candidates.items()
+        }
+        minimum_score = min(raw_slot_scores.values(), default=0.0)
+        maximum_score = max(raw_slot_scores.values(), default=1.0)
+        score_span = max(1e-6, maximum_score - minimum_score)
+        maximum_frequency = max(frequency for _, frequency, _ in valid_patterns)
+        transition_counts = pattern_profile["transition_counts"]
+        maximum_transition = max(
+            (
+                count for (first, _), count in transition_counts.items()
+                if first == previous_mask
+            ),
+            default=1,
+        )
+
+        best_mask = current_mask
+        best_score = -1e9
+        for mask, frequency, slots in valid_patterns:
+            audio_score = sum(
+                (raw_slot_scores[slot] - minimum_score) / score_span
+                for slot in slots
+            ) / max(1, len(slots))
+            frequency_score = frequency / max(1, maximum_frequency)
+            transition_score = (
+                transition_counts.get((previous_mask, mask), 0)
+                / max(1, maximum_transition)
+                if previous_mask is not None else 0.0
+            )
+            overlap_score = (
+                (mask & current_mask).bit_count() / max(1, target_count)
+            )
+            score = (
+                audio_score * 0.60
+                + frequency_score * 0.24
+                + transition_score * 0.11
+                + overlap_score * 0.05
+            )
+            if score > best_score or (
+                math.isclose(score, best_score) and mask < best_mask
+            ):
+                best_score = score
+                best_mask = mask
+
+        matched_bar_count += 1
+        if best_mask != current_mask:
+            repositioned_bar_count += 1
+            for candidate in current_candidates:
+                selected_by_sample.pop(candidate["hitSample"], None)
+            for slot in range(8):
+                if best_mask & (1 << slot):
+                    candidate = slot_candidates[slot]
+                    selected_by_sample[candidate["hitSample"]] = candidate
+        previous_mask = best_mask
+
+    patterned = sorted(
+        selected_by_sample.values(),
+        key=lambda candidate: candidate["hitSample"],
+    )
+    return patterned, {
+        "matched_bar_count": matched_bar_count,
+        "repositioned_bar_count": repositioned_bar_count,
+    }
+
+
+def build_pipeline_notes(selected, settings, wheel_samples):
+    selected = sorted(selected, key=lambda candidate: candidate["hitSample"])
+    wheel_samples = {
+        sample for sample in wheel_samples
+        if any(candidate["hitSample"] == sample for candidate in selected)
+    }
+    if selected:
+        wheel_samples.discard(selected[-1]["hitSample"])
+    maximum_run = settings["color_max_run_length"]
+    previous_good = None
+    run_length = 0
+    notes = []
+    for index, candidate in enumerate(selected):
+        band_energy = candidate["eqBandEnergy"]
+        band_flux = candidate["eqBandFlux"]
+        low_value = band_flux[0] * 0.72 + band_energy[0] * 0.28
+        high_value = band_flux[2] * 0.72 + band_energy[2] * 0.28
+        if abs(low_value - high_value) < 0.055:
+            good = (candidate["beatIndex"] + candidate["subdivision"] + index) % 2 == 0
+        else:
+            good = low_value >= high_value
+        if good == previous_good and run_length >= maximum_run:
+            good = not good
+        run_length = run_length + 1 if good == previous_good else 1
+        previous_good = good
         is_wheel = candidate["hitSample"] in wheel_samples
         if is_wheel:
-            kind = "GoodWheelUp"
+            kind = "GoodWheelUp" if good else "BadWheelDown"
         else:
-            kind = "GoodTap"
+            kind = "GoodTap" if good else "BadTap"
         notes.append({
             "hitSample": int(candidate["hitSample"]),
             "kind": kind,
             "laneIndex": 1,
         })
+    if notes and "Wheel" in notes[-1]["kind"]:
+        notes[-1]["kind"] = (
+            "GoodTap" if notes[-1]["kind"].startswith("Good") else "BadTap"
+        )
+    return notes, len(wheel_samples)
 
-    actual_density = len(selected) / max(1, active_beat_count) * 100.0
+
+def select_ordered_pipeline_chart(
+    candidates,
+    difficulty,
+    sample_rate,
+    playable_end_sample=None,
+    pattern_profile=None,
+):
+    settings = ORDERED_PIPELINE_SETTINGS[difficulty]
+    candidate_by_sample = {
+        candidate["hitSample"]: candidate
+        for candidate in candidates
+        if playable_end_sample is None
+        or candidate["hitSample"] <= playable_end_sample
+    }
+    eligible_candidates = sorted(
+        candidate_by_sample.values(),
+        key=lambda candidate: candidate["hitSample"],
+    )
+    main_candidates = [
+        candidate for candidate in eligible_candidates
+        if candidate["subdivision"] == 0
+    ]
+    half_candidates = [
+        candidate for candidate in eligible_candidates
+        if candidate["subdivision"] == 2
+    ]
+
+    groove_half_score_threshold = float("inf")
+    groove_half_relief_threshold = float("inf")
+    groove_half_samples = set()
+    groove_half_relief_samples = set()
+    groove_half_fallback_samples = set()
+    if settings.get("allows_groove_half_beats", False) and half_candidates:
+        groove_scores = np.asarray(
+            [pipeline_bps_priority(candidate) for candidate in half_candidates],
+            dtype=np.float64,
+        )
+        groove_half_score_threshold = float(np.percentile(
+            groove_scores,
+            settings["groove_half_add_percentile"],
+        ))
+        groove_half_relief_threshold = float(np.percentile(
+            groove_scores,
+            settings["groove_half_relief_percentile"],
+        ))
+
+        def collect_groove_half_samples(score_threshold, threshold_scale):
+            candidates_by_bar = {}
+            for candidate in half_candidates:
+                if pipeline_bps_priority(candidate) < score_threshold:
+                    continue
+                if (
+                    candidate["eqSupport"]
+                    < settings["groove_half_minimum_support"] * threshold_scale
+                ):
+                    continue
+                pulse_threshold = (
+                    settings["groove_half_minimum_pulse"] * threshold_scale
+                )
+                energy_threshold = (
+                    settings["groove_half_minimum_energy"] * threshold_scale
+                )
+                if not (
+                    candidate["eqFlux"] >= pulse_threshold
+                    or candidate["strength"] >= pulse_threshold
+                    or candidate["energy"] >= energy_threshold
+                ):
+                    continue
+                bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+                candidates_by_bar.setdefault(bar_index, []).append(candidate)
+
+            selected_samples = set()
+            maximum_per_bar = int(
+                settings["maximum_groove_half_beats_per_bar"]
+            )
+            for bar_candidates in candidates_by_bar.values():
+                ranked = sorted(
+                    bar_candidates,
+                    key=pipeline_bps_priority,
+                    reverse=True,
+                )
+                selected_samples.update(
+                    candidate["hitSample"]
+                    for candidate in ranked[:maximum_per_bar]
+                )
+            return selected_samples
+
+        groove_half_samples = collect_groove_half_samples(
+            groove_half_score_threshold,
+            1.0,
+        )
+        groove_half_relief_samples = collect_groove_half_samples(
+            groove_half_relief_threshold,
+            0.80,
+        )
+
+        fallback_candidates_by_bar = {}
+        for candidate in half_candidates:
+            if (
+                candidate["eqSupport"]
+                < settings["groove_half_fallback_minimum_support"]
+            ):
+                continue
+            if not (
+                candidate["eqFlux"]
+                >= settings["groove_half_fallback_minimum_pulse"]
+                or candidate["strength"]
+                >= settings["groove_half_fallback_minimum_pulse"]
+                or candidate["energy"]
+                >= settings["groove_half_fallback_minimum_energy"]
+            ):
+                continue
+            bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+            fallback_candidates_by_bar.setdefault(bar_index, []).append(
+                candidate
+            )
+        for bar_candidates in fallback_candidates_by_bar.values():
+            best = max(bar_candidates, key=pipeline_bps_priority)
+            groove_half_fallback_samples.add(best["hitSample"])
+
+    def is_highlight_half_candidate(candidate):
+        return (
+            settings["allows_half_beats"]
+            and candidate["subdivision"] == 2
+            and candidate.get("halfBeatTriggerScore", 0.0)
+            >= settings["half_trigger_minimum"]
+            and (
+                candidate.get("highlightTrigger", False)
+                or candidate.get("equalizerRiseTrigger", False)
+                or candidate.get("loudnessRiseTrigger", False)
+                or candidate.get("bpsRiseTrigger", False)
+            )
+        )
+
+    def is_groove_half_candidate(candidate):
+        return candidate["hitSample"] in groove_half_samples
+
+    def is_relief_groove_half_candidate(candidate):
+        sample = candidate["hitSample"]
+        return (
+            sample in groove_half_relief_samples
+            or sample in groove_half_fallback_samples
+        )
+
+    def has_bps_add_support(candidate):
+        if candidate["subdivision"] == 0:
+            return candidate["eqSupport"] >= main_threshold * 0.62
+        if is_groove_half_candidate(candidate):
+            return (
+                candidate["eqSupport"]
+                >= settings.get("groove_half_minimum_support", 0.13)
+            )
+        return candidate["eqSupport"] >= max(0.13, half_threshold * 0.55)
+
+    triggered_half_candidates = [
+        candidate for candidate in half_candidates
+        if is_highlight_half_candidate(candidate)
+    ]
+    estimated_bpm = estimate_onbeat_bpm(main_candidates, sample_rate)
+    bars = {}
+    for candidate in eligible_candidates:
+        bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+        bars.setdefault(bar_index, []).append(candidate)
+
+    # 1. BPM creates the main-beat foundation.
+    selected_samples = {candidate["hitSample"] for candidate in main_candidates}
+    bpm_result_count = len(selected_samples)
+
+    # 2. Equalizer support removes weak main beats and adds natural half-beat accents.
+    main_support = np.asarray(
+        [candidate["eqSupport"] for candidate in main_candidates],
+        dtype=np.float64,
+    )
+    main_threshold = (
+        float(np.percentile(
+            main_support,
+            settings["eq_main_remove_percentile"],
+        ))
+        if len(main_support) else 0.0
+    )
+    eq_rejected_samples = set()
+    before_equalizer = set(selected_samples)
+    for candidate in main_candidates:
+        beat_in_bar = candidate["beatIndex"] % BEATS_PER_BAR
+        protection = 0.44 if beat_in_bar == 0 else 0.72 if beat_in_bar == 2 else 1.0
+        if candidate["eqSupport"] < main_threshold * protection:
+            selected_samples.discard(candidate["hitSample"])
+            eq_rejected_samples.add(candidate["hitSample"])
+
+    half_threshold = float("inf")
+    if triggered_half_candidates:
+        half_threshold = float(np.percentile(
+            [candidate["eqSupport"] for candidate in triggered_half_candidates],
+            settings["eq_half_add_percentile"],
+        ))
+        equalizer_half_by_bar = {}
+        for candidate in triggered_half_candidates:
+            if not (
+                candidate.get("highlightTrigger", False)
+                or candidate.get("equalizerRiseTrigger", False)
+            ):
+                continue
+            if (
+                candidate["eqSupport"] >= max(0.20, half_threshold)
+                and (
+                    candidate["eqFlux"] >= 0.11
+                    or candidate["eqEnergy"] >= 0.38
+                )
+            ):
+                bar_index = candidate["beatIndex"] // BEATS_PER_BAR
+                equalizer_half_by_bar.setdefault(bar_index, []).append(candidate)
+        for bar_candidates in equalizer_half_by_bar.values():
+            ranked = sorted(
+                bar_candidates,
+                key=pipeline_bps_priority,
+                reverse=True,
+            )
+            for candidate in ranked[:settings["maximum_half_beats_per_highlight_bar"]]:
+                selected_samples.add(candidate["hitSample"])
+    eq_removed_count = len(before_equalizer - selected_samples)
+    eq_added_count = len(selected_samples - before_equalizer)
+    equalizer_result_count = len(selected_samples)
+
+    # 3. Local BPS controls the playable note rate without imposing a gap rule.
+    before_bps = set(selected_samples)
+    bps_targets = []
+    local_bps_values = []
+    target_nps_values = []
+    for bar_index in sorted(bars):
+        bar_candidates = bars[bar_index]
+        highlight_active = any(
+            is_highlight_half_candidate(candidate)
+            for candidate in bar_candidates
+        )
+        allowed = [
+            candidate for candidate in bar_candidates
+            if candidate["subdivision"] == 0
+            or candidate["hitSample"] in selected_samples
+            or is_groove_half_candidate(candidate)
+            or (
+                is_highlight_half_candidate(candidate)
+                and (
+                    candidate.get("highlightTrigger", False)
+                    or candidate.get("bpsRiseTrigger", False)
+                )
+            )
+        ]
+        target, local_bps, target_nps = pipeline_target_count(
+            settings,
+            bar_candidates,
+            highlight_active,
+        )
+        if target <= 0:
+            continue
+        bps_targets.append(target)
+        local_bps_values.append(local_bps)
+        target_nps_values.append(target_nps)
+        bar_samples = {
+            candidate["hitSample"] for candidate in allowed
+            if candidate["hitSample"] in selected_samples
+        }
+        if len(bar_samples) > target:
+            ranked = sorted(
+                (candidate for candidate in allowed if candidate["hitSample"] in bar_samples),
+                key=pipeline_bps_priority,
+            )
+            for candidate in ranked[:len(bar_samples) - target]:
+                selected_samples.discard(candidate["hitSample"])
+        elif len(bar_samples) < target:
+            addable = [
+                candidate for candidate in allowed
+                if candidate["hitSample"] not in selected_samples
+                and candidate["hitSample"] not in eq_rejected_samples
+                and has_bps_add_support(candidate)
+            ]
+            addable.sort(key=pipeline_bps_priority, reverse=True)
+            half_count = sum(
+                candidate["subdivision"] == 2
+                and candidate["hitSample"] in selected_samples
+                for candidate in bar_candidates
+            )
+            half_limit = (
+                settings["maximum_half_beats_per_highlight_bar"]
+                if highlight_active else int(
+                    settings.get("maximum_groove_half_beats_per_bar", 0)
+                )
+            )
+            additions_needed = target - len(bar_samples)
+            additions_made = 0
+            for candidate in addable:
+                if additions_made >= additions_needed:
+                    break
+                if candidate["subdivision"] == 2:
+                    if half_count >= half_limit:
+                        continue
+                    half_count += 1
+                selected_samples.add(candidate["hitSample"])
+                additions_made += 1
+
+    streak_relief_samples = set()
+    maximum_main_only_bars = int(
+        settings.get("maximum_main_only_bars_before_relief", 0)
+    )
+    if maximum_main_only_bars > 0 and (
+        groove_half_relief_samples or groove_half_fallback_samples
+    ):
+        main_only_run = 0
+        for bar_index in sorted(bars):
+            bar_candidates = bars[bar_index]
+            selected_in_bar = [
+                candidate for candidate in bar_candidates
+                if candidate["hitSample"] in selected_samples
+            ]
+            selected_main_count = sum(
+                candidate["subdivision"] == 0
+                for candidate in selected_in_bar
+            )
+            selected_half_count = sum(
+                candidate["subdivision"] == 2
+                for candidate in selected_in_bar
+            )
+            if selected_main_count < 3:
+                main_only_run = 0
+                continue
+            if selected_half_count > 0:
+                main_only_run = 0
+                continue
+
+            main_only_run += 1
+            if main_only_run <= maximum_main_only_bars:
+                continue
+            if len(selected_in_bar) >= settings["maximum_notes_per_bar"]:
+                continue
+
+            addable = [
+                candidate for candidate in bar_candidates
+                if is_relief_groove_half_candidate(candidate)
+                and candidate["hitSample"] not in selected_samples
+                and candidate["hitSample"] not in eq_rejected_samples
+            ]
+            if not addable:
+                continue
+            candidate = max(addable, key=pipeline_bps_priority)
+            selected_samples.add(candidate["hitSample"])
+            streak_relief_samples.add(candidate["hitSample"])
+            main_only_run = 0
+    bps_removed_count = len(before_bps - selected_samples)
+    bps_added_count = len(selected_samples - before_bps)
+    bps_result_count = len(selected_samples)
+
+    # 4. Loudness thins quiet bars and reinforces loud bars after BPS balancing.
+    before_loudness = set(selected_samples)
+    for bar_index in sorted(bars):
+        bar_candidates = bars[bar_index]
+        main_in_bar = [
+            candidate for candidate in bar_candidates
+            if candidate["subdivision"] == 0
+        ]
+        if not main_in_bar:
+            continue
+        bar_loudness = float(
+            np.mean([candidate["energy"] for candidate in main_in_bar]) * 0.62
+            + max(candidate["energy"] for candidate in main_in_bar) * 0.38
+        )
+        selected_in_bar = [
+            candidate for candidate in bar_candidates
+            if candidate["hitSample"] in selected_samples
+        ]
+        loudness_expansion = any(
+            candidate.get("highlightTrigger", False)
+            or candidate.get("loudnessRiseTrigger", False)
+            for candidate in bar_candidates
+        )
+        if (
+            max(candidate["energy"] for candidate in main_in_bar) < 0.055
+            and max(candidate["eqSupport"] for candidate in main_in_bar) < 0.10
+        ):
+            for candidate in selected_in_bar:
+                selected_samples.discard(candidate["hitSample"])
+            continue
+        if bar_loudness < settings["quiet_loudness"] and len(selected_in_bar) > 1:
+            remove_count = int(settings["quiet_remove_count"])
+            if (
+                remove_count > 0
+                and bar_loudness < settings["quiet_loudness"] * 0.48
+            ):
+                remove_count += 1
+            if remove_count > 0:
+                removable = sorted(selected_in_bar, key=pipeline_loudness_priority)
+                for candidate in removable[:min(remove_count, len(removable) - 1)]:
+                    selected_samples.discard(candidate["hitSample"])
+        elif (
+            loudness_expansion
+            and bar_loudness
+            >= max(
+                settings["quiet_loudness"] * 1.35,
+                settings["loud_loudness"] * 0.70,
+            )
+        ):
+            allowed = [
+                candidate for candidate in bar_candidates
+                if candidate["subdivision"] == 0
+                or candidate["hitSample"] in selected_samples
+                or (
+                    is_highlight_half_candidate(candidate)
+                    and (
+                        candidate.get("highlightTrigger", False)
+                        or candidate.get("loudnessRiseTrigger", False)
+                    )
+                )
+            ]
+            addable = [
+                candidate for candidate in allowed
+                if candidate["hitSample"] not in selected_samples
+                and candidate["hitSample"] not in eq_rejected_samples
+                and candidate["eqSupport"] >= 0.16
+            ]
+            addable.sort(key=pipeline_loudness_priority, reverse=True)
+            add_count = 2 if (
+                difficulty == "HARD"
+                and bar_loudness >= settings["loud_loudness"] * 1.45
+            ) else 1
+            half_count = sum(
+                candidate["subdivision"] == 2
+                and candidate["hitSample"] in selected_samples
+                for candidate in bar_candidates
+            )
+            additions_made = 0
+            for candidate in addable:
+                if additions_made >= add_count:
+                    break
+                if candidate["subdivision"] == 2:
+                    if (
+                        half_count
+                        >= settings["maximum_half_beats_per_highlight_bar"]
+                    ):
+                        continue
+                    half_count += 1
+                selected_samples.add(candidate["hitSample"])
+                additions_made += 1
+    loudness_removed_count = len(before_loudness - selected_samples)
+    loudness_added_count = len(selected_samples - before_loudness)
+
+    selected = [
+        candidate_by_sample[sample]
+        for sample in sorted(selected_samples)
+    ]
+    pre_wheel_count = len(selected)
+    difficulty_pattern_profile = (
+        pattern_profile.get(difficulty)
+        if pattern_profile is not None else None
+    )
+    wheel_slot_weights = (
+        difficulty_pattern_profile["wheel_slot_weights"]
+        if difficulty_pattern_profile is not None else None
+    )
+    (
+        wheel_samples,
+        selected,
+        wheel_clearance_removed_count,
+        wheel_score_threshold,
+        reserved_wheel_intervals,
+    ) = choose_pipeline_wheel_samples(
+        selected,
+        settings,
+        sample_rate,
+        wheel_slot_weights,
+    )
+    wheel_clearance_result_count = len(selected)
+    reference_candidate_pool = [
+        candidate for candidate in eligible_candidates
+        if candidate["subdivision"] == 0
+        or is_highlight_half_candidate(candidate)
+        or is_relief_groove_half_candidate(candidate)
+    ]
+    pattern_stats = {
+        "matched_bar_count": 0,
+        "repositioned_bar_count": 0,
+    }
+    if difficulty_pattern_profile is not None:
+        selected, pattern_stats = apply_snowflake_pattern_grammar(
+            selected,
+            reference_candidate_pool,
+            wheel_samples,
+            reserved_wheel_intervals,
+            difficulty_pattern_profile,
+            settings.get("preserve_main_beats_around_wheels", False),
+        )
+    notes, wheel_count = build_pipeline_notes(
+        selected,
+        settings,
+        wheel_samples,
+    )
+    burst_note_count = sum(
+        candidate["subdivision"] == 2 for candidate in selected
+    )
+    eligible_half_bar_indices = {
+        candidate["beatIndex"] // BEATS_PER_BAR
+        for candidate in triggered_half_candidates
+    }
+    selected_half_candidates = [
+        candidate for candidate in selected
+        if candidate["subdivision"] == 2
+    ]
+    selected_groove_half_candidates = [
+        candidate for candidate in selected_half_candidates
+        if not is_highlight_half_candidate(candidate)
+    ]
+    selected_half_bar_indices = {
+        candidate["beatIndex"] // BEATS_PER_BAR
+        for candidate in selected_half_candidates
+    }
+    actual_density = len(selected) / max(1, len(main_candidates)) * 100.0
     return {
         "difficulty": difficulty,
-        "targetDensityPercent": int(round(settings["density"] * 100.0)),
         "actualDensityPercent": round(actual_density, 3),
-        "activeBeatCount": active_beat_count,
+        "activeBeatCount": len(main_candidates),
+        "halfBeatAllowed": settings["allows_half_beats"],
+        "noteSpeedWorldUnitsPerSecond": settings["note_speed"],
         "colorRunLength": settings["color_max_run_length"],
-        "colorPattern": "audio_seeded_variant_bank",
-        "colorPatternVariantCount": len(ONBEAT_COLOR_PATTERN_BANKS[difficulty]),
+        "colorPattern": "equalizer_dominant_band",
         "burstNoteCount": burst_note_count,
-        "quarterBurstNoteCount": quarter_burst_note_count,
-        "wheelWindowSeconds": settings["wheel_window_seconds"],
-        "wheelMinimumGapSeconds": settings["wheel_min_gap_seconds"],
+        "quarterBurstNoteCount": 0,
+        "halfBeatSelectionPolicy": (
+            "highlight_or_equalizer_rise_or_loudness_rise_or_bps_rise_or_audio_supported_groove"
+            if settings.get("allows_groove_half_beats", False)
+            else "highlight_or_equalizer_rise_or_loudness_rise_or_bps_rise_only"
+        ),
+        "maximumHalfBeatsPerHighlightBar": settings[
+            "maximum_half_beats_per_highlight_bar"
+        ],
+        "highlightTargetBonus": settings["highlight_target_bonus"],
+        "halfBeatEligibleBarCount": len(eligible_half_bar_indices),
+        "halfBeatSelectedBarCount": len(selected_half_bar_indices),
+        "halfBeatHighlightNoteCount": sum(
+            candidate.get("highlightTrigger", False)
+            for candidate in selected_half_candidates
+        ),
+        "halfBeatEqualizerRiseNoteCount": sum(
+            candidate.get("equalizerRiseTrigger", False)
+            for candidate in selected_half_candidates
+        ),
+        "halfBeatLoudnessRiseNoteCount": sum(
+            candidate.get("loudnessRiseTrigger", False)
+            for candidate in selected_half_candidates
+        ),
+        "halfBeatBpsRiseNoteCount": sum(
+            candidate.get("bpsRiseTrigger", False)
+            for candidate in selected_half_candidates
+        ),
+        "grooveHalfBeatAllowed": settings.get(
+            "allows_groove_half_beats", False
+        ),
+        "grooveHalfBeatScorePercentile": settings.get(
+            "groove_half_add_percentile", 0.0
+        ),
+        "grooveHalfBeatScoreThreshold": round(
+            groove_half_score_threshold, 6
+        ) if np.isfinite(groove_half_score_threshold) else 0.0,
+        "grooveHalfBeatReliefPercentile": settings.get(
+            "groove_half_relief_percentile", 0.0
+        ),
+        "maximumGrooveHalfBeatsPerBar": settings.get(
+            "maximum_groove_half_beats_per_bar", 0
+        ),
+        "maximumMainOnlyBarsBeforeRelief": maximum_main_only_bars,
+        "grooveHalfBeatEligibleBarCount": len({
+            candidate["beatIndex"] // BEATS_PER_BAR
+            for candidate in half_candidates
+            if candidate["hitSample"] in groove_half_samples
+            and not is_highlight_half_candidate(candidate)
+        }),
+        "grooveHalfBeatFallbackBarCount": len({
+            candidate["beatIndex"] // BEATS_PER_BAR
+            for candidate in half_candidates
+            if candidate["hitSample"] in groove_half_fallback_samples
+            and not is_highlight_half_candidate(candidate)
+        }),
+        "grooveHalfBeatSelectedNoteCount": len(
+            selected_groove_half_candidates
+        ),
+        "streakReliefHalfBeatCount": sum(
+            candidate["hitSample"] in streak_relief_samples
+            for candidate in selected_half_candidates
+        ),
+        "minimumGapSamples": 0,
+        "estimatedBpm": round(estimated_bpm, 6),
+        "wheelSelectionPolicy": (
+            "audio_score_percentile_with_snowflake_wheel_slot_bias"
+            if difficulty_pattern_profile is not None
+            else "audio_score_percentile_without_time_quota"
+        ),
+        "wheelScorePercentile": settings["wheel_score_percentile"],
+        "wheelScoreThreshold": round(wheel_score_threshold, 6),
+        "wheelLeadClearanceSamples": int(round(
+            settings["wheel_lead_clearance_seconds"] * sample_rate
+        )),
+        "wheelRecoveryClearanceSamples": int(round(
+            settings["wheel_recovery_clearance_seconds"] * sample_rate
+        )),
+        "wheelMainBeatPreservation": settings.get(
+            "preserve_main_beats_around_wheels", False
+        ),
+        "wheelClearancePolicy": (
+            "preserve_main_beats_clear_half_beats"
+            if settings.get("preserve_main_beats_around_wheels", False)
+            else "clear_all_overlapping_notes"
+        ),
+        "wheelNoteCount": wheel_count,
+        "wheelClearanceRemovedCount": wheel_clearance_removed_count,
+        "referenceChartKey": SNOWFLAKE_WALTZ_REFERENCE["chart_key"],
+        "referenceSongName": SNOWFLAKE_WALTZ_REFERENCE["song_name"],
+        "referencePatternApplied": difficulty_pattern_profile is not None,
+        "referenceUniquePatternCount": (
+            difficulty_pattern_profile["unique_pattern_count"]
+            if difficulty_pattern_profile is not None else 0
+        ),
+        "referencePatternMatchedBarCount": pattern_stats["matched_bar_count"],
+        "referencePatternRepositionedBarCount": pattern_stats[
+            "repositioned_bar_count"
+        ],
+        "finalNoteCount": len(notes),
+        "bpmBaseCount": bpm_result_count,
+        "equalizerRemovedCount": eq_removed_count,
+        "equalizerAddedCount": eq_added_count,
+        "bpsRemovedCount": bps_removed_count,
+        "bpsAddedCount": bps_added_count,
+        "loudnessRemovedCount": loudness_removed_count,
+        "loudnessAddedCount": loudness_added_count,
+        "localBpsMinimum": round(min(local_bps_values), 6) if local_bps_values else 0.0,
+        "localBpsMaximum": round(max(local_bps_values), 6) if local_bps_values else 0.0,
+        "targetNotesPerSecondMinimum": round(min(target_nps_values), 6) if target_nps_values else 0.0,
+        "targetNotesPerSecondMaximum": round(max(target_nps_values), 6) if target_nps_values else 0.0,
+        "pipelineStages": [
+            {
+                "order": 1,
+                "name": "BPM",
+                "added": bpm_result_count,
+                "removed": 0,
+                "result": bpm_result_count,
+            },
+            {
+                "order": 2,
+                "name": "EQUALIZER",
+                "added": eq_added_count,
+                "removed": eq_removed_count,
+                "result": equalizer_result_count,
+            },
+            {
+                "order": 3,
+                "name": "BPS",
+                "added": bps_added_count,
+                "removed": bps_removed_count,
+                "result": bps_result_count,
+            },
+            {
+                "order": 4,
+                "name": "LOUDNESS",
+                "added": loudness_added_count,
+                "removed": loudness_removed_count,
+                "result": pre_wheel_count,
+            },
+            {
+                "order": 5,
+                "name": "LONG_NOTE_CLEARANCE",
+                "added": 0,
+                "removed": wheel_clearance_removed_count,
+                "result": wheel_clearance_result_count,
+            },
+            {
+                "order": 6,
+                "name": "SNOWFLAKE_PATTERN",
+                "added": 0,
+                "removed": 0,
+                "result": len(notes),
+                "repositionedBars": pattern_stats["repositioned_bar_count"],
+            },
+        ],
         "notes": notes,
     }
 
 
-def generate_onbeat_difficulty_charts(audio, sample_rate, timing_profile=None):
+def generate_onbeat_difficulty_charts(
+    audio,
+    sample_rate,
+    timing_profile=None,
+    manual_anchor_map=None,
+    pattern_profile=None,
+):
     features = (
         {}
         if timing_profile is not None
         else detect_audio_pulse_grid(audio, sample_rate)
     )
     precision = build_precision_features(audio, sample_rate)
+    audible_end_sample, audible_reference_rms, audible_threshold_rms = (
+        detect_audible_end_sample(audio, sample_rate)
+    )
+    playable_end_sample = max(
+        0,
+        min(
+            len(audio) - 1,
+            audible_end_sample - int(round(ENDING_GUARD_SECONDS * sample_rate)),
+        ),
+    )
     candidates, beat_samples, grid_samples = build_onbeat_candidates(
         features,
         precision,
         len(audio),
         sample_rate,
         timing_profile,
+        manual_anchor_map,
     )
+    analyze_candidate_equalizer(audio, sample_rate, candidates)
+    features["highlight_summary"] = annotate_pipeline_highlights(candidates)
     charts = [
-        select_onbeat_difficulty_chart(candidates, difficulty, sample_rate)
+        select_ordered_pipeline_chart(
+            candidates,
+            difficulty,
+            sample_rate,
+            playable_end_sample,
+            pattern_profile,
+        )
         for difficulty in ("EASY", "NORMAL", "HARD")
     ]
-    chart_by_difficulty = {
-        chart["difficulty"]: chart for chart in charts
-    }
-    beat_sample_set = set(beat_samples)
-    for lower_name, upper_name in (("NORMAL", "HARD"), ("EASY", "NORMAL")):
-        lower_chart = chart_by_difficulty[lower_name]
-        upper_samples = {
-            note["hitSample"]
-            for note in chart_by_difficulty[upper_name]["notes"]
-        }
-        previous_count = len(lower_chart["notes"])
-        lower_chart["notes"] = [
-            note for note in lower_chart["notes"]
-            if note["hitSample"] in upper_samples
-        ]
-        lower_chart["nestedNotesRemoved"] = (
-            previous_count - len(lower_chart["notes"])
-        )
-        lower_chart["actualDensityPercent"] = round(
-            len(lower_chart["notes"])
-            / max(1, lower_chart["activeBeatCount"])
-            * 100.0,
-            3,
-        )
-        lower_chart["burstNoteCount"] = sum(
-            note["hitSample"] not in beat_sample_set
-            for note in lower_chart["notes"]
-        )
-        lower_chart["quarterBurstNoteCount"] = 0
-    for chart in charts:
-        apply_onbeat_color_patterns(chart, candidates)
+    features["audible_end_sample"] = int(audible_end_sample)
+    features["playable_end_sample"] = int(playable_end_sample)
+    features["audible_reference_rms"] = float(audible_reference_rms)
+    features["audible_threshold_rms"] = float(audible_threshold_rms)
     return features, beat_samples, grid_samples, charts
 
 
@@ -2549,10 +3797,12 @@ def generate_difficulty(song_name, analysis, beat_samples, bpm, difficulty):
 def validate_chart(chart):
     beats = chart["beatSamples"]
     uses_direct_onsets = chart.get("notePlacementMode") == "direct_audio_onsets"
+    beat_grid_subdivision = int(chart.get("beatGridSubdivision", 1))
+    uses_main_beats_only = beat_grid_subdivision == 1
     playable_end_sample = int(chart.get("playableEndSample", chart["totalSamples"] - 1))
     audible_end_sample = int(chart.get("audibleEndSample", chart["totalSamples"]))
-    if playable_end_sample >= audible_end_sample:
-        raise ValueError("Playable ending must precede the measured audible ending")
+    if not 0 <= playable_end_sample < audible_end_sample <= chart["totalSamples"]:
+        raise ValueError("Playable and audible endings are outside the chart range")
     automatic_anchors = chart.get("automaticBeatAnchors", [])
     if automatic_anchors:
         timing_analysis_beats = int(chart.get("timingAnalysisBeats", 0))
@@ -2578,8 +3828,13 @@ def validate_chart(chart):
         if not valid_samples:
             raise ValueError("Direct onset samples are missing")
     else:
-        valid_samples = set(chart.get("gridSamples", []))
-        if not valid_samples:
+        grid_samples = chart.get("gridSamples", [])
+        valid_samples = set(grid_samples)
+        if uses_main_beats_only:
+            if grid_samples != beats:
+                raise ValueError("Main-beat chart grid must exactly match beatSamples")
+            valid_samples = set(beats)
+        elif not valid_samples:
             valid_samples = set(beats)
             valid_samples.update(
                 midpoint_sample(beats[i], beats[i + 1])
@@ -2587,9 +3842,32 @@ def validate_chart(chart):
             )
         if not set(beats).issubset(valid_samples):
             raise ValueError("Strict beat samples are missing from the note grid")
+        if beat_grid_subdivision not in (1, 2):
+            raise ValueError("Beat charts may use only main-beat or half-beat grids")
+        if beat_grid_subdivision == 2:
+            exact_half_samples = set()
+            for first, second in zip(beats, beats[1:]):
+                half = midpoint_sample(first, second)
+                exact_half_samples.update((half - 1, half, half + 1))
+            if len(beats) >= 2:
+                trailing_half = int(round(
+                    beats[-1] + (beats[-1] - beats[-2]) * 0.5
+                ))
+                exact_half_samples.update(
+                    (trailing_half - 1, trailing_half, trailing_half + 1)
+                )
+            unknown_grid_samples = (
+                valid_samples - set(beats) - exact_half_samples
+            )
+            if unknown_grid_samples:
+                raise ValueError("Half-beat grid contains a non-half-beat sample")
     for difficulty in chart["charts"]:
         previous = -1
         minimum_gap_samples = int(difficulty.get("minimumGapSamples", 0))
+        if int(difficulty.get("finalNoteCount", -1)) != len(difficulty["notes"]):
+            raise ValueError(
+                f"Final note count metadata mismatch in {difficulty['difficulty']}"
+            )
         for note in difficulty["notes"]:
             sample = note["hitSample"]
             if sample not in valid_samples:
@@ -2600,7 +3878,75 @@ def validate_chart(chart):
                 raise ValueError(f"Note gap is too short in {difficulty['difficulty']}")
             if sample > playable_end_sample:
                 raise ValueError(f"Note exceeds playable ending in {difficulty['difficulty']}")
+            if note.get("kind") not in {
+                "GoodTap",
+                "BadTap",
+                "GoodWheelUp",
+                "BadWheelDown",
+            }:
+                raise ValueError(f"Unknown note kind in {difficulty['difficulty']}")
+            if int(note.get("laneIndex", -1)) != 1:
+                raise ValueError(f"Invalid note lane in {difficulty['difficulty']}")
             previous = sample
+        actual_wheel_count = sum(
+            "Wheel" in note.get("kind", "") for note in difficulty["notes"]
+        )
+        if actual_wheel_count != int(difficulty.get("wheelNoteCount", -1)):
+            raise ValueError(
+                f"Long-note count metadata mismatch in {difficulty['difficulty']}"
+            )
+        if not uses_direct_onsets:
+            actual_half_beat_count = sum(
+                note["hitSample"] not in set(beats)
+                for note in difficulty["notes"]
+            )
+            if actual_half_beat_count != int(
+                difficulty.get("burstNoteCount", -1)
+            ):
+                raise ValueError(
+                    f"Half-beat count metadata mismatch in {difficulty['difficulty']}"
+                )
+        wheel_lead_clearance = int(
+            difficulty.get("wheelLeadClearanceSamples", 0)
+        )
+        wheel_recovery_clearance = int(
+            difficulty.get("wheelRecoveryClearanceSamples", 0)
+        )
+        preserve_wheel_main_beats = bool(
+            difficulty.get("wheelMainBeatPreservation", False)
+        )
+        main_beat_samples = set(beats)
+        for index, note in enumerate(difficulty["notes"]):
+            if "Wheel" not in note.get("kind", ""):
+                continue
+            if (
+                index > 0
+                and note["hitSample"]
+                - difficulty["notes"][index - 1]["hitSample"]
+                < wheel_lead_clearance
+                and not (
+                    preserve_wheel_main_beats
+                    and difficulty["notes"][index - 1]["hitSample"]
+                    in main_beat_samples
+                )
+            ):
+                raise ValueError(
+                    f"Long-note lead clearance failed in {difficulty['difficulty']}"
+                )
+            if (
+                index + 1 < len(difficulty["notes"])
+                and difficulty["notes"][index + 1]["hitSample"]
+                - note["hitSample"]
+                < wheel_recovery_clearance
+                and not (
+                    preserve_wheel_main_beats
+                    and difficulty["notes"][index + 1]["hitSample"]
+                    in main_beat_samples
+                )
+            ):
+                raise ValueError(
+                    f"Long-note recovery clearance failed in {difficulty['difficulty']}"
+                )
         if difficulty["notes"] and uses_direct_onsets:
             if difficulty.get("finalOnsetSample") != difficulty["notes"][-1]["hitSample"]:
                 raise ValueError(f"Final note mismatch in {difficulty['difficulty']}")
@@ -2610,8 +3956,30 @@ def validate_chart(chart):
             if difficulty["finalCadenceSample"] != difficulty["notes"][-1]["hitSample"]:
                 raise ValueError(f"Final note mismatch in {difficulty['difficulty']}")
 
+    if not uses_direct_onsets:
+        chart_by_name = {
+            difficulty["difficulty"]: difficulty
+            for difficulty in chart["charts"]
+        }
+        if set(chart_by_name) != {"EASY", "NORMAL", "HARD"}:
+            raise ValueError("Beat charts require EASY, NORMAL, and HARD")
+        for difficulty in chart_by_name.values():
+            if int(difficulty.get("quarterBurstNoteCount", 0)) != 0:
+                raise ValueError("Quarter-beat notes are not allowed")
+            if difficulty["notes"] and not difficulty["notes"][-1]["kind"].endswith("Tap"):
+                raise ValueError(
+                    f"Final note must be a tap in {difficulty['difficulty']}"
+                )
 
-def generate_all(project):
+
+def resolve_chart_key(entry, index):
+    output_name = str(entry.get("chartKey", "")).strip()
+    if not output_name and index < len(OUTPUT_NAMES):
+        output_name = OUTPUT_NAMES[index]
+    return output_name or f"song_{index + 1:03d}"
+
+
+def generate_all(project, resume=False):
     music = project / "Assets" / "Resources" / "Music"
     output = project / "Assets" / "Resources" / "NoteCharts"
     unity_pcm = load_unity_pcm_export(project / "Temp" / "NoteChartPcm")
@@ -2623,15 +3991,43 @@ def generate_all(project):
     songs = manifest.get("songs", [])
     if not songs:
         raise ValueError("Music manifest contains no songs")
+    manual_anchor_maps = load_manual_anchor_maps(project)
     output.mkdir(parents=True, exist_ok=True)
+
+    reference_entry = None
+    for index, entry in enumerate(songs):
+        if resolve_chart_key(entry, index) == SNOWFLAKE_WALTZ_REFERENCE["chart_key"]:
+            reference_entry = entry
+            break
+    if reference_entry is None:
+        raise ValueError("Snowflake Waltz reference chart is missing from the manifest")
+    reference_pcm_key = reference_entry["name"].strip().lower()
+    if reference_pcm_key not in unity_pcm:
+        raise KeyError("Unity PCM export is missing for the Snowflake Waltz reference")
+    reference_pcm = unity_pcm[reference_pcm_key]
+    reference_generated = generate_onbeat_difficulty_charts(
+        reference_pcm["audio"],
+        reference_pcm["sample_rate"],
+        STRICT_V6_BUILD_TIMING.get(SNOWFLAKE_WALTZ_REFERENCE["chart_key"]),
+        manual_anchor_maps.get(SNOWFLAKE_WALTZ_REFERENCE["chart_key"]),
+        None,
+    )
+    reference_pattern_profile = build_snowflake_pattern_profile(
+        reference_generated[1],
+        reference_generated[3],
+    )
+    print(
+        "Snowflake Waltz placement grammar: "
+        + ", ".join(
+            f"{difficulty}={profile['unique_pattern_count']} patterns"
+            for difficulty, profile in reference_pattern_profile.items()
+        ),
+        flush=True,
+    )
 
     output_names = set()
     for index, entry in enumerate(songs):
-        output_name = str(entry.get("chartKey", "")).strip()
-        if not output_name and index < len(OUTPUT_NAMES):
-            output_name = OUTPUT_NAMES[index]
-        if not output_name:
-            output_name = f"song_{index + 1:03d}"
+        output_name = resolve_chart_key(entry, index)
         if output_name in output_names:
             raise ValueError(f"Duplicate chartKey: {output_name}")
         output_names.add(output_name)
@@ -2639,40 +4035,122 @@ def generate_all(project):
         audio_path = music / f"{entry['name']}.mp3"
         if not audio_path.exists():
             raise FileNotFoundError(audio_path)
+        audio_sha256 = hashlib.sha256(audio_path.read_bytes()).hexdigest()
+        target = output / f"{output_name}.json"
+        if resume and target.exists():
+            try:
+                existing = json.loads(target.read_text(encoding="utf-8"))
+                if (
+                    existing.get("generator") == GENERATOR_VERSION
+                    and existing.get("audioSha256") == audio_sha256
+                ):
+                    validate_chart(existing)
+                    entry["chartKey"] = output_name
+                    entry["bpm"] = round(float(existing["bpm"]), 6)
+                    entry["firstBeat"] = round(
+                        int(existing["firstBeatSample"])
+                        / int(existing["sampleRate"]),
+                        6,
+                    )
+                    print(f"{output_name}: verified existing {GENERATOR_VERSION}", flush=True)
+                    continue
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                pass
         pcm_key = entry["name"].strip().lower()
         if pcm_key not in unity_pcm:
             raise KeyError(f"Unity PCM export missing for {output_name}")
         pcm = unity_pcm[pcm_key]
         sample_rate = pcm["sample_rate"]
-        audio_sha256 = hashlib.sha256(audio_path.read_bytes()).hexdigest()
         timing_profile = STRICT_V6_BUILD_TIMING.get(output_name)
-        features, beats, grid_samples, charts = generate_onbeat_difficulty_charts(
-            pcm["audio"],
-            sample_rate,
-            timing_profile,
-        )
+        manual_anchor_map = manual_anchor_maps.get(output_name)
+        if manual_anchor_map is not None:
+            anchor_audio_hash = str(manual_anchor_map.get("audioSha256", "")).strip()
+            if anchor_audio_hash and anchor_audio_hash != audio_sha256:
+                raise ValueError(
+                    f"Manual anchor audio hash mismatch for {output_name}: "
+                    f"anchor={anchor_audio_hash} audio={audio_sha256}"
+                )
+            anchor_song_name = str(manual_anchor_map.get("songName", "")).strip()
+            if anchor_song_name and anchor_song_name != entry["name"]:
+                raise ValueError(
+                    f"Manual anchor song mismatch for {output_name}: "
+                    f"anchor={anchor_song_name} manifest={entry['name']}"
+                )
+        if output_name == SNOWFLAKE_WALTZ_REFERENCE["chart_key"]:
+            features, beats, grid_samples, charts = reference_generated
+        else:
+            features, beats, grid_samples, charts = generate_onbeat_difficulty_charts(
+                pcm["audio"],
+                sample_rate,
+                timing_profile,
+                manual_anchor_map,
+                reference_pattern_profile,
+            )
         if len(beats) < PHRASE_BEATS or not grid_samples:
             raise ValueError(f"Strict beat grid is too short for {output_name}")
         counts = [len(chart["notes"]) for chart in charts]
+        beat_grid_mode = features.get(
+            "beat_grid_mode",
+            "manual_anchors" if manual_anchor_map is not None else "adaptive_bar_anchors",
+        )
+        timing_sources = {
+            "constant": "Unity PCM calibrated constant musical beat grid",
+            "manual_anchors": "Unity PCM manual first-beat and bar-anchor map",
+            "adaptive_bar_anchors": (
+                "Unity PCM adaptive bar anchors from calibrated musical beat grid"
+            ),
+        }
         document = {
             "version": 1,
-            "generator": "unity_pcm_nonoverlap_speed_v5",
+            "generator": GENERATOR_VERSION,
             "pcmSource": "Unity AudioClip.GetData",
-            "timingSource": (
-                "Unity PCM calibrated constant musical beat grid"
-                if timing_profile is not None
-                else "Unity PCM automatically detected constant musical beat grid"
+            "timingSource": timing_sources[beat_grid_mode],
+            "noteTimingPolicy": "BPM main beats first; exact half-beats are added in highlights, where equalizer, loudness, or local BPS rises, and on HARD where steady-groove audio strongly supports an offbeat; no quarter-beat notes",
+            "difficultyPolicy": "each song keeps its own BPM, loudness-driven density, highlight intensity, and audio-supported HARD groove accents; Snowflake Waltz is used only as a bar-level note-placement and long-note-position grammar",
+            "generationPipeline": [
+                "BPM",
+                "EQUALIZER",
+                "BPS",
+                "LOUDNESS",
+                "LONG_NOTE_CLEARANCE",
+                "SNOWFLAKE_PATTERN",
+            ],
+            "difficultyReference": {
+                "chartKey": SNOWFLAKE_WALTZ_REFERENCE["chart_key"],
+                "songName": SNOWFLAKE_WALTZ_REFERENCE["song_name"],
+                "policy": "placement_patterns_only_not_note_count_or_density",
+            },
+            "halfBeatPolicy": "EASY disables half-beats; NORMAL uses highlight and rise triggers; HARD also allows one audio-supported groove half-beat in steady bars and relief after two consecutive main-only bars",
+            "longNotePolicy": "no fixed time quota or minimum frequency; strong audio-ranked main beats become long notes, HARD preserves surrounding main beats, and only overlapping half-beats are cleared",
+            "equalizerInputPolicy": "reuse the existing low-pulse, broad-transient, and loudness envelopes without a separate frequency-band scan",
+            "colorPatternPolicy": "tap color follows the low-pulse versus broad-transient balance with a difficulty-specific maximum run length",
+            "clusterPolicy": "no generic tap gap; HARD long-note clearances never remove main beats and clear only overlapping half-beats",
+            "endingPolicy": (
+                f"notes stop at least {ENDING_GUARD_SECONDS * 1000:.0f} ms "
+                "before the measured audible ending"
             ),
-            "noteTimingPolicy": "strict main-beat and half-beat grid; no quarter-beat notes",
-            "difficultyPolicy": "EASY 75% main beats; NORMAL sparse half-beat accents; HARD denser irregular half-beat patterns",
-            "colorPatternPolicy": "audio-seeded per-bar pattern bank with rotated, reversed, and inverted variants",
-            "clusterPolicy": "HARD minimum note gap 0.20 seconds; NORMAL/HARD wheel guards remove adjacent extras",
-            "beatGridMode": "constant",
+            "beatGridMode": beat_grid_mode,
             "beatGridSubdivision": 2,
             "beatPeriodSamples": round(features["strict_period_samples"], 6),
             "beatPhaseSamples": round(features["strict_phase_samples"], 6),
+            "manualAnchorCount": len(
+                features.get("manual_anchor_map", {}).get("anchors", [])
+            ),
+            "automaticAnchorCount": len(features.get("auto_timing_anchors", [])),
+            "adaptiveOffsetP95Ms": round(features.get("adaptive_offset_p95_ms", 0.0), 4),
+            "automaticBeatAnchors": features.get("auto_timing_anchors", []),
+            "manualBeatAnchors": features.get("manual_anchor_map", {}).get("anchors", []),
+            "timingAnalysisBeats": TIMING_ANALYSIS_BEATS,
+            "timingAnchorBeats": TIMING_ANCHOR_BEATS,
+            "timingContextWeight": TIMING_CONTEXT_WEIGHT,
             "precisionHopSamples": 32,
             "precisionPeakCount": features.get("precision_peak_count", 0),
+            "highlightAnalysis": features.get("highlight_summary", {}),
+            "audibleEndSample": int(features["audible_end_sample"]),
+            "playableEndSample": int(features["playable_end_sample"]),
+            "endingGuardSeconds": ENDING_GUARD_SECONDS,
+            "audibleReferenceRms": round(features["audible_reference_rms"], 8),
+            "audibleThresholdRms": round(features["audible_threshold_rms"], 8),
             "activeBeatPercent": round(
                 features.get("strict_grid_active_beat_percent", 0.0),
                 3,
@@ -2707,12 +4185,17 @@ def generate_all(project):
         entry["chartKey"] = output_name
         entry["bpm"] = round(features["bpm"], 6)
         entry["firstBeat"] = round(beats[0] / sample_rate, 6)
-        target = output / f"{output_name}.json"
         target.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        timing_mode = {
+            "constant": "constant",
+            "manual_anchors": "manual",
+            "adaptive_bar_anchors": "adaptive",
+        }[beat_grid_mode]
         print(
             f"{output_name}: {sample_rate} Hz, "
-            f"quantized={features['bpm']:.3f} BPM, "
-            f"beats={len(beats)}, grid={len(grid_samples)}, E/N/H={counts}"
+            f"anchored={features['bpm']:.3f} BPM ({timing_mode}), "
+            f"beats={len(beats)}, grid={len(grid_samples)}, E/N/H={counts}",
+            flush=True,
         )
 
     (music / "bpm_manifest.json").write_text(
@@ -2725,8 +4208,13 @@ def main():
     parser = argparse.ArgumentParser()
     default_project = Path(__file__).resolve().parents[1] / "gmaejam2026" / "My project (1)"
     parser.add_argument("--project", type=Path, default=default_project)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Verify and skip charts already generated by the current version.",
+    )
     args = parser.parse_args()
-    generate_all(args.project.resolve())
+    generate_all(args.project.resolve(), resume=args.resume)
 
 
 if __name__ == "__main__":
